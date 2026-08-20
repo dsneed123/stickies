@@ -167,7 +167,12 @@ class StickyNote(Gtk.Window):
         self._apply_color(note.get("color", "yellow"))
         self._apply_mode(note.get("mode", "text"), initial=True)
         self._apply_flags()
+        self.update_attachment_badge()
         self._place()
+
+        self.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
+        self.drag_dest_add_uri_targets()
+        self.connect("drag-data-received", self._on_drag_data)
 
         self.connect("configure-event", self._on_configure)
         self.connect("key-press-event", self._on_key)
@@ -246,6 +251,12 @@ class StickyNote(Gtk.Window):
         self.title_entry.connect("button-release-event", self._on_title_release)
         self._drag_origin = None
         box.pack_start(self.title_entry, True, True, 0)
+
+        self.attach_label = Gtk.Label()
+        self.attach_label.get_style_context().add_class("sticky-count")
+        self.attach_label.set_no_show_all(True)
+        self.attach_label.set_tooltip_text("Files attached as prompt context")
+        box.pack_start(self.attach_label, False, False, 0)
 
         self.count_label = Gtk.Label()
         self.count_label.get_style_context().add_class("sticky-count")
@@ -848,6 +859,30 @@ class StickyNote(Gtk.Window):
             return False
         return True
 
+    def _on_drag_data(self, _widget, context, _x, _y, data, _info, time):
+        paths = []
+        for uri in data.get_uris() or []:
+            try:
+                path, _host = GLib.filename_from_uri(uri)
+            except Exception:
+                continue
+            paths.append(path)
+        if paths:
+            self.attach_files(paths)
+        Gtk.drag_finish(context, bool(paths), False, time)
+
+    def attach_files(self, paths):
+        """Drop a README on a note and it becomes context for the next prompt."""
+        self.toggle_prompt(force=True)
+        added = self.prompt_panel.attach(paths)
+        self.prompt_panel.open_thoughts()
+        return added
+
+    def update_attachment_badge(self):
+        count = len(self.note.get("attachments") or [])
+        self.attach_label.set_text("📎%d" % count if count else "")
+        self.attach_label.set_visible(bool(count))
+
     def _on_delete_event(self, *_):
         self.hide_note()
         return True
@@ -912,6 +947,7 @@ class StickyNote(Gtk.Window):
         add(util.separator())
         add(util.menu_item("✨ Prompt panel",
                            lambda *_: self.toggle_prompt()))
+        add(util.menu_item("Attach a file as context…", lambda *_: self._menu_attach()))
         add(util.menu_item("Copy note text",
                            lambda *_: util.copy_to_clipboard(note_to_markdown(self.note))))
         add(util.separator())
@@ -929,6 +965,11 @@ class StickyNote(Gtk.Window):
             menu.popup_at_widget(widget, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
 
     # ---------------------------------------------------------------- actions
+
+    def _menu_attach(self):
+        self.toggle_prompt(force=True)
+        self.prompt_panel.open_thoughts()
+        self.prompt_panel._on_attach(None)
 
     def toggle_prompt(self, force=None):
         """Slide the ✨ panel in or out of the bottom of the note."""
@@ -1031,6 +1072,7 @@ class StickyNote(Gtk.Window):
         is_list = self.note.get("mode") == "list"
         self.count_label.set_visible(is_list)
         self.format_btn.set_visible(not is_list)
+        self.update_attachment_badge()
         self.stack.set_visible_child_name("list" if is_list else "text")
         self.apply_collapsed_state()
         self.present()

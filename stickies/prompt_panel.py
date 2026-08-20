@@ -18,12 +18,13 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 
 from . import ollama, util
-from .store import MODES, OPEN_QUESTIONS_MARKER, item_counts, note_to_markdown
+from .store import (MODES, OPEN_QUESTIONS_MARKER, collect_attachments,
+                    item_counts, note_to_markdown)
 
 MODE_ORDER = ["claude_code", "plan", "bug", "refactor", "review"]
 
 
-def build_user_message(note, mode_key, extra="", include_done=False):
+def build_user_message(note, mode_key, extra="", include_done=False, attachments=None):
     mode = MODES.get(mode_key, MODES["claude_code"])
     source = note_to_markdown(note, include_done=include_done, marks=include_done)
     parts = [mode["instruction"]]
@@ -33,6 +34,21 @@ def build_user_message(note, mode_key, extra="", include_done=False):
             "already handled and have been removed, so do not ask about them."
         )
     parts += ["", "--- NOTES ---", source or "(the note is empty)", "--- END NOTES ---"]
+
+    usable = [a for a in (attachments or []) if a.get("text")]
+    if usable:
+        parts += [
+            "",
+            "The files below describe the project as it stands today. They are "
+            "background, not the task - the task is only what the NOTES say. Use "
+            "them to fill in Context, to get names and paths right, and to avoid "
+            "asking about anything they already answer.",
+            "",
+            "--- ATTACHED PROJECT FILES ---",
+        ]
+        for item in usable:
+            parts += ["", "### %s" % item["name"], item["text"]]
+        parts += ["", "--- END ATTACHED PROJECT FILES ---"]
     if extra.strip():
         parts += [
             "",
@@ -140,6 +156,25 @@ class PromptPanel(Gtk.Box):
         thoughts.pack_start(self.context_scroll, False, False, 0)
         self._context_placeholder()
 
+        attach_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        attach_btn = util.text_button(
+            "📎 attach file",
+            "Attach a README, spec or config so the model knows the project. "
+            "Re-read from disk on every run — you can also drop files onto the note.",
+        )
+        attach_btn.get_style_context().add_class("panel-note")
+        attach_btn.connect("clicked", self._on_attach)
+        attach_row.pack_start(attach_btn, False, False, 0)
+        thoughts.pack_start(attach_row, False, False, 0)
+
+        self.chips = Gtk.FlowBox()
+        self.chips.set_selection_mode(Gtk.SelectionMode.NONE)
+        self.chips.set_max_children_per_line(4)
+        self.chips.set_row_spacing(0)
+        self.chips.set_column_spacing(2)
+        self.chips.set_homogeneous(False)
+        thoughts.pack_start(self.chips, False, False, 0)
+
         self.thoughts_revealer = Gtk.Revealer()
         self.thoughts_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
         self.thoughts_revealer.set_transition_duration(140)
@@ -210,7 +245,7 @@ class PromptPanel(Gtk.Box):
 
     def on_shown(self):
         """Called each time the panel is revealed."""
-        self.refresh_scope()
+        self.refresh_attachments()
         if not self._models:
             GLib.idle_add(self._load_models)
 
@@ -222,11 +257,15 @@ class PromptPanel(Gtk.Box):
             text = "%d item%s" % (sent, "" if sent == 1 else "s")
             if done_n and not include:
                 text += "  ·  %d ticked left out" % done_n
-            self.scope_label.set_text(text)
+            self.scope_label.set_text(text + self._attachment_suffix())
             self.include_done.set_sensitive(done_n > 0)
         else:
-            self.scope_label.set_text("whole note")
+            self.scope_label.set_text("whole note" + self._attachment_suffix())
             self.include_done.set_sensitive(False)
+
+    def _attachment_suffix(self):
+        count = len(self.note.get("attachments") or [])
+        return "  ·  %d file%s" % (count, "" if count == 1 else "s") if count else ""
 
     def _on_include_toggled(self, _btn):
         self.note["prompt_include_done"] = self.include_done.get_active()
@@ -263,6 +302,9 @@ class PromptPanel(Gtk.Box):
             if line:
                 lines.append("- " + line)
         return "\n".join(lines)
+
+    def open_thoughts(self):
+        self._toggle_thoughts(force=True)
 
     def _toggle_thoughts(self, _button=None, force=None):
         showing = (not self.thoughts_revealer.get_reveal_child()) if force is None else force
@@ -312,6 +354,79 @@ class PromptPanel(Gtk.Box):
                 self._questions = body[match.end():].strip()
                 self.result_view.get_buffer().set_text(body[: match.start()].rstrip())
         self._show_questions()
+
+    # -------------------------------------------------------------- attachments
+
+    def attach(self, paths):
+        """Add files to this note, skipping duplicates. Returns how many stuck."""
+        current = self.note.setdefault("attachments", [])
+        added = 0
+        for path in paths:
+            path = os.path.abspath(os.path.expanduser(path))
+            if os.path.isdir(path) or path in current:
+                continue
+            current.append(path)
+            added += 1
+        if added:
+            self.store.save()
+            self.refresh_attachments()
+        return added
+
+    def detach(self, path):
+        attachments = self.note.get("attachments") or []
+        if path in attachments:
+            attachments.remove(path)
+            self.store.save()
+            self.refresh_attachments()
+
+    def refresh_attachments(self):
+        for child in list(self.chips.get_children()):
+            self.chips.remove(child)
+        for item in collect_attachments(self.note):
+            label = "📄 %s" % item["name"]
+            tooltip = item["path"]
+            if item["error"]:
+                label = "⚠ %s" % item["name"]
+                tooltip += "\n%s" % item["error"]
+            else:
+                tooltip += "\n%s characters of context" % f"{len(item['text']):,}"
+            tooltip += "\nClick to detach"
+            chip = util.text_button(label + "  ✕", tooltip)
+            chip.get_style_context().add_class("panel-note")
+            chip.connect("clicked", lambda _b, p=item["path"]: self.detach(p))
+            self.chips.add(chip)
+        self.chips.show_all()
+        self.note_window.update_attachment_badge()
+        self.refresh_scope()
+
+    def _on_attach(self, _button):
+        dialog = Gtk.FileChooserDialog(
+            title="Attach files to this note",
+            transient_for=self.note_window,
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Attach", Gtk.ResponseType.ACCEPT)
+        dialog.set_select_multiple(True)
+        text_filter = Gtk.FileFilter()
+        text_filter.set_name("Text, markdown and source")
+        for pattern in ("*.md", "*.markdown", "*.txt", "*.rst", "*.json", "*.yaml",
+                        "*.yml", "*.toml", "*.ini", "*.cfg", "*.env", "*.py", "*.js",
+                        "*.ts", "*.tsx", "*.go", "*.rs", "*.java", "*.rb", "*.c",
+                        "*.h", "*.cpp", "*.sh", "*.sql", "Makefile", "Dockerfile"):
+            text_filter.add_pattern(pattern)
+        dialog.add_filter(text_filter)
+        any_filter = Gtk.FileFilter()
+        any_filter.set_name("All files")
+        any_filter.add_pattern("*")
+        dialog.add_filter(any_filter)
+        existing = self.note.get("attachments") or []
+        dialog.set_current_folder(
+            os.path.dirname(existing[-1]) if existing else os.path.expanduser("~")
+        )
+        if dialog.run() == Gtk.ResponseType.ACCEPT:
+            self.attach(dialog.get_filenames())
+        dialog.destroy()
 
     # ------------------------------------------------------------------ menus
 
@@ -401,7 +516,8 @@ class PromptPanel(Gtk.Box):
             model,
             settings.get("system_prompt", ""),
             build_user_message(
-                self.note, mode_key, self.context_text, self.include_done.get_active()
+                self.note, mode_key, self.context_text,
+                self.include_done.get_active(), collect_attachments(self.note),
             ),
             settings.get("temperature", 0.4),
         )

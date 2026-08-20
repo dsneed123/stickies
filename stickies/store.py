@@ -138,6 +138,7 @@ def new_note(color="yellow", x=None, y=None):
         "visible": True,
         "collapsed": False,
         "prompt_context": "",
+        "attachments": [],
         "created": _now(),
         "updated": _now(),
     }
@@ -295,6 +296,56 @@ def text_with_markdown(note):
         if i < len(text):
             out.append(text[i])
     return "".join(out)
+
+
+# Attached files are read fresh at generation time, so editing a README on disk
+# feeds the next prompt without re-attaching it.
+MAX_ATTACHMENT_CHARS = 16000
+MAX_ATTACHMENT_TOTAL = 32000
+MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024
+
+
+def read_attachment(path, limit=MAX_ATTACHMENT_CHARS):
+    """-> (text, error). Long files are truncated rather than dropped."""
+    try:
+        size = os.path.getsize(path)
+    except OSError as exc:
+        return "", "missing (%s)" % (exc.strerror or "no such file")
+    if size > MAX_ATTACHMENT_BYTES:
+        return "", "too big (%.1f MB)" % (size / 1e6)
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            text = fh.read(limit + 1)
+    except UnicodeDecodeError:
+        return "", "not a text file"
+    except OSError as exc:
+        return "", "unreadable (%s)" % (exc.strerror or "error")
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "\n\n[... truncated, the file continues ...]"
+    return text, ""
+
+
+def collect_attachments(note, total_limit=MAX_ATTACHMENT_TOTAL):
+    """Read every attached file, honouring a combined budget."""
+    out, used = [], 0
+    for path in note.get("attachments") or []:
+        entry = {"path": path, "name": os.path.basename(path), "text": "", "error": ""}
+        text, error = read_attachment(path)
+        if error:
+            entry["error"] = error
+            out.append(entry)
+            continue
+        room = total_limit - used
+        if len(text) > room:
+            if room < 500:
+                entry["error"] = "left out, context budget full"
+                out.append(entry)
+                continue
+            text = text[:room].rstrip() + "\n\n[... truncated to fit ...]"
+        used += len(text)
+        entry["text"] = text
+        out.append(entry)
+    return out
 
 
 def note_to_markdown(note, include_done=True, marks=True):

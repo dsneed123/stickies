@@ -6,8 +6,9 @@ Stick a note on your screen, keep a running checklist for a project, tick things
 off as they land — then hit ✨ and a panel drops out of the bottom of the note.
 Your local Ollama model reads what's *still unticked* and rewrites it into a
 structured prompt for Claude Code, which you can copy or open straight into a
-terminal. If it needs something you didn't say, it asks — in a dropdown, not in
-the prompt.
+terminal. Attach your project's README and it writes against your actual stack;
+if it still needs something you didn't say, it asks — in a dropdown, not in the
+prompt.
 
 Nothing leaves your machine. Notes are a JSON file in `~/.local/share/stickies/`,
 and the rewriting runs on your own Ollama server.
@@ -65,6 +66,7 @@ Each note is its own borderless, always-on-top window.
 | 🎨 | note colour — seven real Post-it shades |
 | 📌 | keep on top |
 | ✕ | hides the note; it stays in **All notes** until you delete it |
+| **Drop a file on it** | attaches that file as context for the note's prompts |
 
 **Checklists:** Enter starts the next item · Backspace on an empty item deletes it
 · Alt+↑/↓ reorders · Ctrl+Enter ticks. Items wrap, so long ones stay readable.
@@ -94,6 +96,21 @@ they ship, and every generation covers only what's still outstanding. The
 **Extra thoughts** is one dropdown, closed until you want it. Inside is a free-text
 box for whatever the note leaves out — the repo, the stack, constraints like "no
 new dependencies". It's saved with the note, so it's still there next time.
+
+**Attach files** for the context a note can't hold. Drop a README, spec or config
+onto a note — or use `📎 attach file` inside the dropdown — and it rides along
+with every prompt from that note. Attachments are **re-read from disk on each
+run**, so editing your README updates the next prompt without re-attaching it. A
+`📎3` badge on the note shows what's attached; click a chip to detach it.
+
+This is what turns a vague note into a specific prompt. Attach a project's README
+and the model stops guessing at your stack, names your real files, and quits
+asking about things the README already answers. Files are sent as *background* —
+explicitly not the task — so the checklist stays the scope.
+
+Text files only, capped at 16k characters each and 32k combined; anything longer
+is truncated rather than dropped, and a missing or binary file shows as `⚠` with
+the reason instead of failing the run.
 
 It's also where the model talks back. **Open questions never go inside the
 prompt** — a prompt you paste into Claude has to stand on its own, not carry a

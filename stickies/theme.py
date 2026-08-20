@@ -188,6 +188,8 @@ def _color_rules():
 .sticky-%(n)s .sticky list.sticky-list,
 .sticky-%(n)s .sticky list.sticky-list row,
 .sticky-%(n)s .sticky list.sticky-list row:hover,
+.sticky-%(n)s .sticky flowbox,
+.sticky-%(n)s .sticky flowboxchild,
 .sticky-%(n)s .sticky scrolledwindow,
 .sticky-%(n)s .sticky viewport,
 .sticky-%(n)s .sticky checkbutton {
@@ -264,6 +266,18 @@ _PANEL_CSS = """
 .sticky .prompt-panel button { opacity: 0.62; }
 .sticky .prompt-panel button:hover { opacity: 1; }
 .sticky .prompt-panel button.primary { opacity: 0.9; }
+.sticky .prompt-panel flowboxchild { padding: 0; }
+.sticky .prompt-panel flowbox button {
+  padding: 0 5px;
+  background-color: rgba(255,255,255,0.42);
+  border: 1px solid rgba(0,0,0,0.13);
+  border-radius: 3px;
+  opacity: 0.75;
+}
+.sticky .prompt-panel flowbox button:hover {
+  opacity: 1;
+  background-color: rgba(255,255,255,0.75);
+}
 """
 
 _provider = None
