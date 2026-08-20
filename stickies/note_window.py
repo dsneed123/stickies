@@ -1,5 +1,6 @@
 """One sticky note = one borderless, always-on-top window styled like a Post-it."""
 
+import os
 import re
 
 import gi
@@ -10,7 +11,7 @@ from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from . import theme, util
 from .prompt_panel import PromptPanel
-from .store import COLORS, note_to_markdown
+from .store import COLORS, collect_attachments, note_to_markdown
 from .theme import COLOR_LABELS
 
 SHADOW_MARGIN = 9  # transparent gutter the drop shadow is painted into
@@ -152,6 +153,8 @@ class StickyNote(Gtk.Window):
         self.prompt_panel = None
         self._pre_prompt_size = None
         self._pending_formats = set()
+        self._dock_source = None
+        self._dock_blocked_until = 0
 
         self.set_decorated(False)
         self.set_resizable(True)
@@ -224,10 +227,15 @@ class StickyNote(Gtk.Window):
         self.grip.set_visible_window(False)
         self.grip.set_size_request(-1, 16)
         dots = Gtk.Image.new_from_icon_name("list-drag-handle-symbolic", Gtk.IconSize.MENU)
-        dots.set_halign(Gtk.Align.CENTER)
         dots.set_valign(Gtk.Align.CENTER)
         dots.get_style_context().add_class("sticky-grab")
-        self.grip.add(dots)
+        # a strip of washi tape holding the note up
+        tape = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        tape.get_style_context().add_class("tape")
+        tape.set_halign(Gtk.Align.CENTER)
+        tape.set_valign(Gtk.Align.CENTER)
+        tape.pack_start(dots, True, True, 0)
+        self.grip.add(tape)
         self.grip.set_tooltip_text("Drag to move  ·  double-click to roll up")
         self.grip.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
         self.grip.connect("button-press-event", self._on_header_press)
@@ -325,16 +333,16 @@ class StickyNote(Gtk.Window):
         self.footer.get_style_context().add_class("sticky-footer")
         self.footer_event.add(self.footer)
 
-        self.mode_btn = util.icon_button(
-            "checkbox-checked-symbolic", "Checklist / plain text  (Ctrl+T)", "☑"
-        )
+        self.mode_btn = util.text_button("\U0001f4cb\ufe0f", "Checklist / plain text  (Ctrl+T)")
         self.mode_btn.connect("clicked", lambda *_: self.toggle_mode())
 
-        self.color_btn = util.text_button("🎨", "Note colour")
+        self.color_btn = util.text_button("\U0001f3a8\ufe0f", "Note colour")
         self.color_btn.connect("clicked", self._on_color_clicked)
 
-        self.pin_btn = util.icon_button("view-pin-symbolic", "Keep on top", "\U0001f4cc")
-        self.pin_btn.connect("clicked", lambda *_: self.toggle_pinned())
+        self.attach_btn = util.text_button(
+            "\U0001f4ce\ufe0f", "Attach a file as context for this note's prompts"
+        )
+        self.attach_btn.connect("clicked", self._on_attach_clicked)
 
         self.prompt_btn = prompt_btn = util.text_button("✨ Prompt")
         prompt_btn.get_style_context().add_class("primary")
@@ -343,13 +351,12 @@ class StickyNote(Gtk.Window):
         )
         prompt_btn.connect("clicked", lambda *_: self.toggle_prompt())
 
-        self.format_btn = util.icon_button(
-            "format-text-bold-symbolic", "Formatting  (Ctrl+B / I / U)", "B"
-        )
+        self.format_btn = util.text_button("B", "Formatting  (Ctrl+B / I / U)")
+        self.format_btn.get_style_context().add_class("format-b")
         self.format_btn.set_no_show_all(True)  # show_all() must not resurrect it
         self.format_btn.connect("clicked", self._on_format_menu)
 
-        for btn in (self.mode_btn, self.format_btn, self.color_btn, self.pin_btn):
+        for btn in (self.mode_btn, self.format_btn, self.attach_btn, self.color_btn):
             self.footer.pack_start(btn, False, False, 0)
         self.footer.pack_start(prompt_btn, False, False, 4)
 
@@ -380,7 +387,6 @@ class StickyNote(Gtk.Window):
 
     def _apply_flags(self):
         self.set_keep_above(bool(self.note.get("pinned", True)))
-        self._toggle_class(self.pin_btn, bool(self.note.get("pinned", True)))
         if self.note.get("sticky"):
             self.stick()
         else:
@@ -754,7 +760,47 @@ class StickyNote(Gtk.Window):
                             self.note.get("w"), self.note.get("h")):
             self.note.update({"x": x, "y": y, "w": w, "h": h})
             self.store.save(delay=1.5)
+        self._check_dock(x, y, w)
         return False
+
+    # ------------------------------------------------------------ deck docking
+
+    def suppress_docking(self, milliseconds):
+        self._dock_blocked_until = GLib.get_monotonic_time() + milliseconds * 1000
+
+    def _check_dock(self, x, y, width):
+        """Hold a note over the deck for a moment and it goes back in."""
+        deck = getattr(self.app, "deck", None)
+        if deck is None or not deck.get_visible():
+            return self._cancel_dock()
+        if GLib.get_monotonic_time() < self._dock_blocked_until:
+            return self._cancel_dock()
+        dx, dy, dw, dh = deck.dock_rect()
+        # only the note's title strip counts, not its whole body
+        head_bottom = y + SHADOW_MARGIN + 44
+        overlapping = not (x + width < dx or x > dx + dw
+                           or head_bottom < dy or y > dy + dh)
+        if not overlapping:
+            return self._cancel_dock()
+        if self._dock_source is None:
+            deck.set_hot(True)
+            self._dock_source = GLib.timeout_add(420, self._dock_now)
+
+    def _dock_now(self):
+        self._dock_source = None
+        deck = getattr(self.app, "deck", None)
+        if deck is not None:
+            deck.set_hot(False)
+        self.hide_note()
+        return False
+
+    def _cancel_dock(self):
+        if self._dock_source is not None:
+            GLib.source_remove(self._dock_source)
+            self._dock_source = None
+            deck = getattr(self.app, "deck", None)
+            if deck is not None:
+                deck.set_hot(False)
 
     def schedule_save(self):
         if self._loading:
@@ -872,11 +918,87 @@ class StickyNote(Gtk.Window):
         Gtk.drag_finish(context, bool(paths), False, time)
 
     def attach_files(self, paths):
-        """Drop a README on a note and it becomes context for the next prompt."""
-        self.toggle_prompt(force=True)
-        added = self.prompt_panel.attach(paths)
-        self.prompt_panel.open_thoughts()
+        """Drop a README on a note and it becomes context for its prompts."""
+        return self.add_attachments(paths)
+
+    def add_attachments(self, paths):
+        """Add files, skipping duplicates and directories. -> how many stuck."""
+        current = self.note.setdefault("attachments", [])
+        added = 0
+        for path in paths:
+            path = os.path.abspath(os.path.expanduser(path))
+            if os.path.isdir(path) or path in current:
+                continue
+            current.append(path)
+            added += 1
+        if added:
+            self.store.save()
+            self.refresh_attachments()
         return added
+
+    def detach(self, path):
+        attachments = self.note.get("attachments") or []
+        if path in attachments:
+            attachments.remove(path)
+            self.store.save()
+            self.refresh_attachments()
+
+    def refresh_attachments(self):
+        self.update_attachment_badge()
+        if self.prompt_panel is not None:
+            self.prompt_panel.refresh_chips()
+
+    def choose_attachments(self):
+        dialog = Gtk.FileChooserDialog(
+            title="Attach files to “%s”" % ((self.note.get("title") or "").strip() or "this note"),
+            transient_for=self,
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Attach", Gtk.ResponseType.ACCEPT)
+        dialog.set_default_response(Gtk.ResponseType.ACCEPT)
+        dialog.set_select_multiple(True)
+        text_filter = Gtk.FileFilter()
+        text_filter.set_name("Text, markdown and source")
+        for pattern in ("*.md", "*.markdown", "*.txt", "*.rst", "*.json", "*.yaml",
+                        "*.yml", "*.toml", "*.ini", "*.cfg", "*.env", "*.py", "*.js",
+                        "*.ts", "*.tsx", "*.go", "*.rs", "*.java", "*.rb", "*.c",
+                        "*.h", "*.cpp", "*.sh", "*.sql", "Makefile", "Dockerfile"):
+            text_filter.add_pattern(pattern)
+        dialog.add_filter(text_filter)
+        any_filter = Gtk.FileFilter()
+        any_filter.set_name("All files")
+        any_filter.add_pattern("*")
+        dialog.add_filter(any_filter)
+        existing = self.note.get("attachments") or []
+        dialog.set_current_folder(
+            os.path.dirname(existing[-1]) if existing else os.path.expanduser("~")
+        )
+        added = 0
+        if dialog.run() == Gtk.ResponseType.ACCEPT:
+            added = self.add_attachments(dialog.get_filenames())
+        dialog.destroy()
+        return added
+
+    def _on_attach_clicked(self, button):
+        """No files yet? Go straight to the picker. Otherwise show what's on."""
+        attachments = self.note.get("attachments") or []
+        if not attachments:
+            self.choose_attachments()
+            return
+        menu = Gtk.Menu()
+        menu.append(util.menu_item("Attach a file…", lambda *_: self.choose_attachments()))
+        menu.append(util.separator())
+        heading = Gtk.MenuItem(label="Attached — click to detach")
+        heading.set_sensitive(False)
+        menu.append(heading)
+        for item in collect_attachments(self.note):
+            label = item["name"] if not item["error"] else "%s  (%s)" % (item["name"], item["error"])
+            entry = util.menu_item("   %s   ✕" % label, lambda _i, p=item["path"]: self.detach(p))
+            entry.set_tooltip_text(item["path"])
+            menu.append(entry)
+        menu.show_all()
+        menu.popup_at_widget(button, Gdk.Gravity.NORTH_WEST, Gdk.Gravity.SOUTH_WEST, None)
 
     def update_attachment_badge(self):
         count = len(self.note.get("attachments") or [])
@@ -967,9 +1089,7 @@ class StickyNote(Gtk.Window):
     # ---------------------------------------------------------------- actions
 
     def _menu_attach(self):
-        self.toggle_prompt(force=True)
-        self.prompt_panel.open_thoughts()
-        self.prompt_panel._on_attach(None)
+        self.choose_attachments()
 
     def toggle_prompt(self, force=None):
         """Slide the ✨ panel in or out of the bottom of the note."""
@@ -1034,6 +1154,7 @@ class StickyNote(Gtk.Window):
             self.resize(self.note.get("w") or 236, 1)
 
     def shutdown(self):
+        self._cancel_dock()
         if self.prompt_panel is not None:
             self.prompt_panel.shutdown()
 

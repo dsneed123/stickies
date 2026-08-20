@@ -245,7 +245,7 @@ class PromptPanel(Gtk.Box):
 
     def on_shown(self):
         """Called each time the panel is revealed."""
-        self.refresh_attachments()
+        self.refresh_chips()
         if not self._models:
             GLib.idle_add(self._load_models)
 
@@ -358,28 +358,15 @@ class PromptPanel(Gtk.Box):
     # -------------------------------------------------------------- attachments
 
     def attach(self, paths):
-        """Add files to this note, skipping duplicates. Returns how many stuck."""
-        current = self.note.setdefault("attachments", [])
-        added = 0
-        for path in paths:
-            path = os.path.abspath(os.path.expanduser(path))
-            if os.path.isdir(path) or path in current:
-                continue
-            current.append(path)
-            added += 1
-        if added:
-            self.store.save()
-            self.refresh_attachments()
-        return added
+        return self.note_window.add_attachments(paths)
 
     def detach(self, path):
-        attachments = self.note.get("attachments") or []
-        if path in attachments:
-            attachments.remove(path)
-            self.store.save()
-            self.refresh_attachments()
+        self.note_window.detach(path)
 
     def refresh_attachments(self):
+        self.note_window.refresh_attachments()
+
+    def refresh_chips(self):
         for child in list(self.chips.get_children()):
             self.chips.remove(child)
         for item in collect_attachments(self.note):
@@ -396,37 +383,10 @@ class PromptPanel(Gtk.Box):
             chip.connect("clicked", lambda _b, p=item["path"]: self.detach(p))
             self.chips.add(chip)
         self.chips.show_all()
-        self.note_window.update_attachment_badge()
         self.refresh_scope()
 
     def _on_attach(self, _button):
-        dialog = Gtk.FileChooserDialog(
-            title="Attach files to this note",
-            transient_for=self.note_window,
-            action=Gtk.FileChooserAction.OPEN,
-        )
-        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
-        dialog.add_button("Attach", Gtk.ResponseType.ACCEPT)
-        dialog.set_select_multiple(True)
-        text_filter = Gtk.FileFilter()
-        text_filter.set_name("Text, markdown and source")
-        for pattern in ("*.md", "*.markdown", "*.txt", "*.rst", "*.json", "*.yaml",
-                        "*.yml", "*.toml", "*.ini", "*.cfg", "*.env", "*.py", "*.js",
-                        "*.ts", "*.tsx", "*.go", "*.rs", "*.java", "*.rb", "*.c",
-                        "*.h", "*.cpp", "*.sh", "*.sql", "Makefile", "Dockerfile"):
-            text_filter.add_pattern(pattern)
-        dialog.add_filter(text_filter)
-        any_filter = Gtk.FileFilter()
-        any_filter.set_name("All files")
-        any_filter.add_pattern("*")
-        dialog.add_filter(any_filter)
-        existing = self.note.get("attachments") or []
-        dialog.set_current_folder(
-            os.path.dirname(existing[-1]) if existing else os.path.expanduser("~")
-        )
-        if dialog.run() == Gtk.ResponseType.ACCEPT:
-            self.attach(dialog.get_filenames())
-        dialog.destroy()
+        self.note_window.choose_attachments()
 
     # ------------------------------------------------------------------ menus
 

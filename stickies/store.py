@@ -104,6 +104,9 @@ DEFAULT_SETTINGS = {
     "claude_cmd": "claude",
     "font_scale": 1.0,
     "default_color": "yellow",
+    "theme": "classic",
+    "show_deck": True,
+    "deck_position": None,
 }
 
 # Older built-in system prompts. If a user is still carrying one of these

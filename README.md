@@ -57,16 +57,19 @@ Each note is its own borderless, always-on-top window.
 
 | | |
 |---|---|
-| **Move** | drag the ⠿ bar across the top, drag the title, or middle-click-drag anywhere |
+| **Move** | drag the washi tape across the top, drag the title, or middle-click-drag anywhere |
 | **Resize** | drag the ⌄ corner at the bottom right |
 | **Roll up** | double-click the title bar |
 | **Menu** | ≡, or right-click anywhere on the note |
-| ☑ | switch between plain text and checklist |
+| 📋 | switch between plain text and checklist |
 | **B** | formatting (text mode only) |
-| 🎨 | note colour — seven real Post-it shades |
-| 📌 | keep on top |
-| ✕ | hides the note; it stays in **All notes** until you delete it |
+| 📎 | attach a file as context — click again to see or detach what's on |
+| 🎨 | note colour — seven shades in whichever theme you're using |
+| ✕ | hides the note; it stays in the deck until you delete it |
 | **Drop a file on it** | attaches that file as context for the note's prompts |
+
+*Keep on top* lives in the ≡ menu rather than the footer — a pin icon next to a
+paperclip reads as "pin a file", which is not what it does.
 
 **Checklists:** Enter starts the next item · Backspace on an empty item deletes it
 · Alt+↑/↓ reorders · Ctrl+Enter ticks. Items wrap, so long ones stay readable.
@@ -82,6 +85,41 @@ model.
 **Shortcuts:** `Ctrl+N` new · `Ctrl+Enter` prompt panel · `Ctrl+T` text/checklist
 · `Ctrl+D` duplicate · `Ctrl+L` all notes · `Ctrl+W` hide · `Ctrl+,` settings ·
 `Ctrl+Q` quit.
+
+## The deck
+
+A slim pill pinned to the top of your screen holds every note as a coloured tab,
+with the count of open items on it. It stands in for a tray icon, which GNOME on
+this setup has no indicator support for.
+
+- **Click a tab** to bring that note down, click again to put it away
+- **Drag a tab downwards** to pull the note out and drop it where you want it
+- **Drag a note back up onto the deck** and hold it there for a moment — the deck
+  lights up and the note goes back in
+- **＋** for a new note, **≡** for the menu (themes, all notes, settings, quit)
+- Right-click a tab for that note's own menu
+
+Put-away notes keep everything — they're just off the desktop. Drag the deck by
+its ⠿ handle to move it; it remembers where you left it. Hide it entirely from
+its menu or in Settings.
+
+## Themes
+
+Six of them, switchable live from the deck's ≡ menu or Settings. Every note
+repaints instantly and keeps its colour slot, so a yellow note stays the yellow
+one in whichever theme.
+
+| | |
+|---|---|
+| **Classic Post-it** | the real Post-it range — canary, limeade, blue sky |
+| **Pastel** | milky and low-saturation |
+| **Bubblegum** | candy pinks and purples |
+| **Mint** | cool greens and teals |
+| **Highlighter** | loud brights |
+| **Night** | dark paper, light ink, for dark desktops |
+
+Night isn't just inverted colours — the input fields, checkboxes and chips flip
+with it, so nothing ends up as light text on a light field.
 
 ## The ✨ prompt panel
 
@@ -172,17 +210,21 @@ stickies/
   store.py            JSON persistence, default system prompt, prompt modes
   theme.py            the Post-it palette and stylesheet
   board.py            "All notes"
+  deck.py             the pinned top-of-screen strip
   settings_window.py  settings
   util.py             small GTK helpers
 ```
 
 ## Notes on the look
 
-Real Post-it colours (Canary, Limeade, Blue Sky, Power Pink, Iris, Marrakesh,
-White), square corners, a paper gradient, an adhesive strip across the top, a
-drop shadow and a curl at the bottom edge. The stylesheet overrides the system
-GTK theme per-colour, so the ink stays dark on the paper whether your desktop
-is light or dark.
+Every note is a rounded sheet of paper with a colour gradient, a soft sheen off
+the top-left corner, a strip of washi tape holding it up, a layered drop shadow
+and a curl at the bottom edge. Checkboxes are round bubbles, buttons are pills,
+and the actions are emoji rather than grey glyphs.
+
+The stylesheet overrides the system GTK theme per-colour on every text-bearing
+node. Without that, a dark desktop theme paints light text onto light paper —
+which is exactly what happened the first time this ran.
 
 ## Licence
 

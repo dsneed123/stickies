@@ -9,6 +9,7 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
 from . import APP_ID, theme
 from .board import Board
+from .deck import Deck
 from .note_window import StickyNote
 from .settings_window import SettingsWindow
 from .store import Store, new_note
@@ -30,6 +31,7 @@ class StickiesApp(Gtk.Application):
         self.store = Store()
         self.windows = {}          # note id -> StickyNote
         self.board = None
+        self.deck = None
         self.settings_window = None
         self.add_main_option(
             "new", ord("n"), GLib.OptionFlags.NONE, GLib.OptionArg.NONE,
@@ -52,14 +54,17 @@ class StickiesApp(Gtk.Application):
     def do_activate(self):
         if not self.store.notes:
             self._create_welcome_note()
+        if self.store.settings.get("show_deck", True):
+            self.open_deck()
         opened = 0
         for note in list(self.store.notes):
             if note.get("visible", True):
                 self.show_note(note)
                 opened += 1
-        if opened == 0:
-            # everything is hidden - give the user a way back in
+        if opened == 0 and self.deck is None:
+            # everything is hidden and there is no deck - give a way back in
             self.open_board()
+        self._refresh_deck()
 
     def _create_welcome_note(self):
         note = new_note(color=self.store.settings.get("default_color", "yellow"))
@@ -81,6 +86,8 @@ class StickiesApp(Gtk.Application):
         for window in list(self.windows.values()):
             window.shutdown()
             window.destroy()
+        if self.deck:
+            self.deck.destroy()
         if self.board:
             self.board.destroy()
         if self.settings_window:
@@ -92,6 +99,7 @@ class StickiesApp(Gtk.Application):
         theme.install(
             font_scale=settings.get("font_scale", 1.0),
             handwritten=settings.get("handwritten", False),
+            theme=settings.get("theme", "classic"),
         )
 
     # ------------------------------------------------------------------ notes
@@ -104,6 +112,7 @@ class StickiesApp(Gtk.Application):
             self.add_window(window)
         window.present_note()
         self._refresh_board()
+        self._refresh_deck()
         return window
 
     def hide_note(self, note):
@@ -114,6 +123,7 @@ class StickiesApp(Gtk.Application):
             note["visible"] = False
             self.store.save()
             self._refresh_board()
+        self._refresh_deck()
 
     def new_note(self, near=None):
         settings = self.store.settings
@@ -142,9 +152,10 @@ class StickiesApp(Gtk.Application):
             self.remove_window(window)
             window.destroy()
         self.store.remove(note_id)
-        if not self.store.notes and self.board is None:
+        if not self.store.notes and self.board is None and self.deck is None:
             self.new_note()
         self._refresh_board()
+        self._refresh_deck()
 
     def show_all_notes(self):
         for note in list(self.store.notes):
@@ -156,8 +167,39 @@ class StickiesApp(Gtk.Application):
 
     def notify_note_changed(self, _note):
         self._refresh_board()
+        self._refresh_deck()
 
     # ---------------------------------------------------------------- windows
+
+    def open_deck(self):
+        if self.deck is None:
+            self.deck = Deck(self)
+            self.add_window(self.deck)
+        self.deck.refresh()
+        self.deck.show_all()
+        self.deck.present()
+        return self.deck
+
+    def set_theme(self, name):
+        self.store.settings["theme"] = name
+        self.store.save()
+        self.reload_theme()
+
+    def set_deck_visible(self, on):
+        self.store.settings["show_deck"] = bool(on)
+        self.store.save()
+        if on:
+            self.open_deck()
+        elif self.deck is not None:
+            deck, self.deck = self.deck, None
+            self.remove_window(deck)
+            deck.destroy()
+            if not any(n.get("visible", True) for n in self.store.notes):
+                self.open_board()
+
+    def _refresh_deck(self):
+        if self.deck is not None:
+            GLib.idle_add(self.deck.refresh)
 
     def open_board(self):
         if self.board is None:

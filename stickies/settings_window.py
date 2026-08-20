@@ -7,7 +7,7 @@ from gi.repository import GLib, Gtk  # noqa: E402
 
 from . import ollama, util
 from .store import DEFAULT_SYSTEM_PROMPT, COLORS
-from .theme import COLOR_LABELS
+from .theme import COLOR_LABELS, THEME_LABELS, THEME_ORDER
 
 
 class SettingsWindow(Gtk.Window):
@@ -96,17 +96,32 @@ class SettingsWindow(Gtk.Window):
         outer.pack_start(self._section("Notes"), False, False, 0)
         grid2 = Gtk.Grid(column_spacing=10, row_spacing=8)
 
+        self.theme_combo = Gtk.ComboBoxText()
+        for name in THEME_ORDER:
+            self.theme_combo.append(name, THEME_LABELS[name])
+        self.theme_combo.set_active_id(settings.get("theme", "classic"))
+        self.theme_combo.set_tooltip_text("Changes every note's paper straight away")
+        self.theme_combo.connect(
+            "changed", lambda c: self.app.set_theme(c.get_active_id() or "classic")
+        )
+        grid2.attach(self._label("Theme"), 0, 0, 1, 1)
+        grid2.attach(self.theme_combo, 1, 0, 1, 1)
+
         self.color_combo = Gtk.ComboBoxText()
         for color in COLORS:
             self.color_combo.append(color, COLOR_LABELS[color])
         self.color_combo.set_active_id(settings.get("default_color", "yellow"))
-        grid2.attach(self._label("New notes are"), 0, 0, 1, 1)
-        grid2.attach(self.color_combo, 1, 0, 1, 1)
+        grid2.attach(self._label("New notes are"), 0, 1, 1, 1)
+        grid2.attach(self.color_combo, 1, 1, 1, 1)
 
         self.scale_spin = Gtk.SpinButton.new_with_range(0.7, 2.0, 0.05)
         self.scale_spin.set_value(float(settings.get("font_scale", 1.0)))
-        grid2.attach(self._label("Text size"), 0, 1, 1, 1)
-        grid2.attach(self.scale_spin, 1, 1, 1, 1)
+        grid2.attach(self._label("Text size"), 0, 2, 1, 1)
+        grid2.attach(self.scale_spin, 1, 2, 1, 1)
+
+        self.deck_check = Gtk.CheckButton(label="Show the deck at the top of the screen")
+        self.deck_check.set_active(bool(settings.get("show_deck", True)))
+        grid2.attach(self.deck_check, 1, 6, 2, 1)
 
         self.hand_check = Gtk.CheckButton(label="Handwritten font")
         self.hand_check.set_active(bool(settings.get("handwritten", False)))
@@ -118,18 +133,18 @@ class SettingsWindow(Gtk.Window):
             "Uses %s" % family if family
             else "No handwriting font installed. Try: sudo apt install fonts-comic-neue"
         )
-        grid2.attach(self.hand_check, 1, 2, 2, 1)
+        grid2.attach(self.hand_check, 1, 3, 2, 1)
 
         self.term_entry = Gtk.Entry()
         self.term_entry.set_text(settings.get("terminal", "gnome-terminal"))
-        grid2.attach(self._label("Terminal"), 0, 3, 1, 1)
-        grid2.attach(self.term_entry, 1, 3, 2, 1)
+        grid2.attach(self._label("Terminal"), 0, 4, 1, 1)
+        grid2.attach(self.term_entry, 1, 4, 2, 1)
 
         self.claude_entry = Gtk.Entry()
         self.claude_entry.set_text(settings.get("claude_cmd", "claude"))
         self.claude_entry.set_hexpand(True)
-        grid2.attach(self._label("Claude command"), 0, 4, 1, 1)
-        grid2.attach(self.claude_entry, 1, 4, 2, 1)
+        grid2.attach(self._label("Claude command"), 0, 5, 1, 1)
+        grid2.attach(self.claude_entry, 1, 5, 2, 1)
         outer.pack_start(grid2, False, False, 0)
 
         # --- actions ---
@@ -178,9 +193,11 @@ class SettingsWindow(Gtk.Window):
             settings["model"] = self.model_combo.get_active_id()
         settings["temperature"] = round(self.temp_scale.get_value(), 2)
         settings["system_prompt"] = util.textview_text(self.sys_view)
+        settings["theme"] = self.theme_combo.get_active_id() or "classic"
         settings["default_color"] = self.color_combo.get_active_id() or "yellow"
         settings["font_scale"] = round(self.scale_spin.get_value(), 2)
         settings["handwritten"] = self.hand_check.get_active()
+        self.app.set_deck_visible(self.deck_check.get_active())
         settings["terminal"] = self.term_entry.get_text().strip() or "gnome-terminal"
         settings["claude_cmd"] = self.claude_entry.get_text().strip() or "claude"
         self.store.save_now()
