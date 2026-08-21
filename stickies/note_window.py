@@ -58,6 +58,8 @@ class ChecklistRow(Gtk.ListBoxRow):
         self.view.set_hexpand(True)
         self.view.set_left_margin(0)
         self.view.set_right_margin(0)
+        self.view.set_pixels_above_lines(1)
+        self.view.set_pixels_below_lines(2)
         self.buffer = self.view.get_buffer()
         self.buffer.set_text(item.get("text", ""))
         self.done_tag = self.buffer.create_tag("done", strikethrough=True)
@@ -203,7 +205,7 @@ class StickyNote(Gtk.Window):
         self.footer_holder = self._build_footer()
         self.paper.pack_start(self.footer_holder, False, False, 0)
 
-        # the ✨ panel drops out of the bottom of the note
+        # the prompt panel drops out of the bottom of the note
         self.prompt_revealer = Gtk.Revealer()
         self.prompt_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_DOWN)
         self.prompt_revealer.set_transition_duration(150)
@@ -260,11 +262,19 @@ class StickyNote(Gtk.Window):
         self._drag_origin = None
         box.pack_start(self.title_entry, True, True, 0)
 
+        self.attach_badge = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        self.attach_badge.set_no_show_all(True)
+        self.attach_badge.set_valign(Gtk.Align.CENTER)
+        self.attach_badge.set_tooltip_text("Files attached as prompt context")
+        clip = Gtk.Image.new_from_icon_name("mail-attachment-symbolic", Gtk.IconSize.MENU)
+        clip.get_style_context().add_class("sticky-count")
         self.attach_label = Gtk.Label()
         self.attach_label.get_style_context().add_class("sticky-count")
-        self.attach_label.set_no_show_all(True)
-        self.attach_label.set_tooltip_text("Files attached as prompt context")
-        box.pack_start(self.attach_label, False, False, 0)
+        self.attach_badge.pack_start(clip, False, False, 0)
+        self.attach_badge.pack_start(self.attach_label, False, False, 0)
+        clip.show()
+        self.attach_label.show()
+        box.pack_start(self.attach_badge, False, False, 0)
 
         self.count_label = Gtk.Label()
         self.count_label.get_style_context().add_class("sticky-count")
@@ -295,6 +305,8 @@ class StickyNote(Gtk.Window):
         self.textview.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.textview.set_left_margin(2)
         self.textview.set_right_margin(2)
+        self.textview.set_pixels_above_lines(1)
+        self.textview.set_pixels_below_lines(3)
         buf = self.textview.get_buffer()
         for name, props in FORMAT_TAGS.items():
             buf.create_tag(name, **props)
@@ -311,7 +323,7 @@ class StickyNote(Gtk.Window):
         self.list_box.get_style_context().add_class("sticky-list")
         list_holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         list_holder.pack_start(self.list_box, False, False, 0)
-        self.add_item_btn = util.text_button("+  add item")
+        self.add_item_btn = util.text_button("Add item")
         self.add_item_btn.set_halign(Gtk.Align.START)
         self.add_item_btn.connect("clicked", lambda *_: self.append_row(focus=True))
         list_holder.pack_start(self.add_item_btn, False, False, 0)
@@ -333,18 +345,19 @@ class StickyNote(Gtk.Window):
         self.footer.get_style_context().add_class("sticky-footer")
         self.footer_event.add(self.footer)
 
-        self.mode_btn = util.text_button("\U0001f4cb\ufe0f", "Checklist / plain text  (Ctrl+T)")
+        self.mode_btn = util.icon_button(
+            "checkbox-checked-symbolic", "Checklist / plain text  (Ctrl+T)", "\u2611")
         self.mode_btn.connect("clicked", lambda *_: self.toggle_mode())
 
-        self.color_btn = util.text_button("\U0001f3a8\ufe0f", "Note colour")
+        self.color_btn = util.icon_button("color-select-symbolic", "Note colour", "\u25cf")
         self.color_btn.connect("clicked", self._on_color_clicked)
 
-        self.attach_btn = util.text_button(
-            "\U0001f4ce\ufe0f", "Attach a file as context for this note's prompts"
-        )
+        self.attach_btn = util.icon_button(
+            "mail-attachment-symbolic",
+            "Attach a file as context for this note's prompts", "\u2317")
         self.attach_btn.connect("clicked", self._on_attach_clicked)
 
-        self.prompt_btn = prompt_btn = util.text_button("✨ Prompt")
+        self.prompt_btn = prompt_btn = util.text_button("Prompt")
         prompt_btn.get_style_context().add_class("primary")
         prompt_btn.set_tooltip_text(
             "Turn this note into an optimised Claude prompt with Ollama  (Ctrl+Enter)"
@@ -480,9 +493,9 @@ class StickyNote(Gtk.Window):
         # the unticked items are what the prompt is built from
         open_n = len(items) - done
         if self.note.get("mode") == "list" and open_n:
-            self.prompt_btn.set_label("✨ Prompt (%d)" % open_n)
+            self.prompt_btn.set_label("Prompt · %d" % open_n)
         else:
-            self.prompt_btn.set_label("✨ Prompt")
+            self.prompt_btn.set_label("Prompt")
 
     def on_items_changed(self):
         self._update_count()
@@ -1002,8 +1015,8 @@ class StickyNote(Gtk.Window):
 
     def update_attachment_badge(self):
         count = len(self.note.get("attachments") or [])
-        self.attach_label.set_text("📎%d" % count if count else "")
-        self.attach_label.set_visible(bool(count))
+        self.attach_label.set_text(str(count) if count else "")
+        self.attach_badge.set_visible(bool(count))
 
     def _on_delete_event(self, *_):
         self.hide_note()
@@ -1067,7 +1080,7 @@ class StickyNote(Gtk.Window):
         add(util.check_item("Show on all workspaces", self.note.get("sticky"),
                             lambda i: self.set_sticky(i.get_active())))
         add(util.separator())
-        add(util.menu_item("✨ Prompt panel",
+        add(util.menu_item("Prompt panel",
                            lambda *_: self.toggle_prompt()))
         add(util.menu_item("Attach a file as context…", lambda *_: self._menu_attach()))
         add(util.menu_item("Copy note text",
@@ -1092,7 +1105,7 @@ class StickyNote(Gtk.Window):
         self.choose_attachments()
 
     def toggle_prompt(self, force=None):
-        """Slide the ✨ panel in or out of the bottom of the note."""
+        """Slide the prompt panel in or out of the bottom of the note."""
         if self.prompt_panel is None:
             self.prompt_panel = PromptPanel(self.app, self.note, self)
             self.prompt_revealer.add(self.prompt_panel)

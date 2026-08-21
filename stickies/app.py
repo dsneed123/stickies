@@ -18,7 +18,7 @@ WELCOME_ITEMS = [
     "Drag the ⠿ handle to move me",
     "Enter adds an item",
     "Tick an item to leave it out of the prompt",
-    "Hit ✨ to write a Claude prompt",
+    "Hit Prompt to write a Claude prompt",
 ]
 
 
@@ -229,7 +229,7 @@ class StickiesApp(Gtk.Application):
         self.settings_window = None
 
     def toggle_prompt(self, note):
-        """Open the note if needed, then drop its ✨ panel down."""
+        """Open the note if needed, then drop its prompt panel down."""
         window = self.show_note(note)
         window.toggle_prompt(force=True)
         return window

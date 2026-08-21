@@ -6,7 +6,9 @@ Stick a note on your screen, keep a running checklist for a project, tick things
 off as they land — then hit ✨ and a panel drops out of the bottom of the note.
 Your local Ollama model reads what's *still unticked* and rewrites it into a
 structured prompt for Claude Code, which you can copy or open straight into a
-terminal. Attach your project's README and it writes against your actual stack;
+terminal. It never wastes the prompt describing your project back to Claude —
+Claude can read the repo. Attach your README and it writes against your real
+files and commands;
 if it still needs something you didn't say, it asks — in a dropdown, not in the
 prompt.
 
@@ -61,10 +63,10 @@ Each note is its own borderless, always-on-top window.
 | **Resize** | drag the ⌄ corner at the bottom right |
 | **Roll up** | double-click the title bar |
 | **Menu** | ≡, or right-click anywhere on the note |
-| 📋 | switch between plain text and checklist |
+| ☑ | switch between plain text and checklist |
 | **B** | formatting (text mode only) |
-| 📎 | attach a file as context — click again to see or detach what's on |
-| 🎨 | note colour — seven shades in whichever theme you're using |
+| clip | attach a file as context — click again to see or detach what's on |
+| dropper | note colour — seven shades in whichever theme you're using |
 | ✕ | hides the note; it stays in the deck until you delete it |
 | **Drop a file on it** | attaches that file as context for the note's prompts |
 
@@ -121,50 +123,83 @@ one in whichever theme.
 Night isn't just inverted colours — the input fields, checkboxes and chips flip
 with it, so nothing ends up as light text on a light field.
 
-## The ✨ prompt panel
+## The prompt panel
 
-Hit **✨ Prompt** and the note grows downward into a panel — no second window.
-The button shows how many items are in scope, e.g. `✨ Prompt (3)`.
+Hit **Prompt** and the note grows downward into a panel — no second window. The
+button shows how many items are in scope, e.g. `Prompt · 3`.
 
 **A ticked box means done, so it stays out of the prompt.** That's the whole
 idea: keep one note per project, add to it as things come up, tick them off as
 they ship, and every generation covers only what's still outstanding. The
 *ticked too* toggle overrides it when you want the full list.
 
-**Extra thoughts** is one dropdown, closed until you want it. Inside is a free-text
-box for whatever the note leaves out — the repo, the stack, constraints like "no
-new dependencies". It's saved with the note, so it's still there next time.
+### It doesn't tell Claude what your project is
 
-**Attach files** for the context a note can't hold. Drop a README, spec or config
-onto a note — or use `📎 attach file` inside the dropdown — and it rides along
-with every prompt from that note. Attachments are **re-read from disk on each
-run**, so editing your README updates the next prompt without re-attaching it. A
-`📎3` badge on the note shows what's attached; click a chip to detach it.
+Claude Code has the repo open. A prompt that opens with *"This is a FastAPI
+service backed by Postgres…"* spends your context explaining something it can
+read in a second. So the prompt writer is told, bluntly, not to: no stack
+summaries, no directory tours, no restating anything a file would answer.
 
-This is what turns a vague note into a specific prompt. Attach a project's README
-and the model stops guessing at your stack, names your real files, and quits
-asking about things the README already answers. Files are sent as *background* —
-explicitly not the task — so the checklist stays the scope.
+Context survives only for what *isn't* in the repo — decisions already taken,
+outside constraints, things tried and rejected. If there's none of that, the
+section is dropped.
 
-Text files only, capped at 16k characters each and 32k combined; anything longer
-is truncated rather than dropped, and a missing or binary file shows as `⚠` with
-the reason instead of failing the run.
+The difference is stark. The same note, before and after this rule: about a
+thousand characters of which a third described the project, versus 302 characters
+that are all instruction.
+
+### Nine approaches, or let it choose
+
+A debugging prompt and a refactoring prompt shouldn't be shaped the same way, so
+each approach has its own structure:
+
+| Approach | Shapes the prompt around |
+|---|---|
+| **Build it** | goal, numbered requirements, out of scope, acceptance criteria |
+| **Plan first** | read before proposing, steps, trade-offs, risks — no code yet |
+| **Track down a bug** | symptom, expected, repro, ruled out; prove the cause before fixing |
+| **Refactor** | what must not change, small verifiable steps, how to check |
+| **Review code** | what to review, priorities, what a finding must include |
+| **Investigate** | a question, where to look, what the answer needs — changes nothing |
+| **Write tests** | what to cover, awkward cases, existing conventions, done means |
+| **Mechanical sweep** | the change, how to find every site, rules, verification |
+| **Weigh the options** | the decision, options, criteria, one committed recommendation |
+
+**Auto** is the default and usually the right answer: a quick classification call
+picks the approach, then the real generation runs with it. The button shows what
+it landed on — `Auto · Debug` — and you can override it any time. Spot-checked on
+seven notes against qwen2.5:14b, it picked the intended approach seven times.
+
+### Extra thoughts
+
+One dropdown, closed until you want it. Inside is a free-text box for whatever
+the note leaves out — constraints, decisions, anything not in the code. It's
+saved with the note.
 
 It's also where the model talks back. **Open questions never go inside the
 prompt** — a prompt you paste into Claude has to stand on its own, not carry a
-list of things nobody answered. Instead, anything the model needs decided shows
-up as `▸ Extra thoughts · 2 questions`. Open it, read what it asked, type the
-answers into the same box, hit Generate again. That's the whole loop.
+list of things nobody answered. Anything the model needs decided shows up as
+`Extra thoughts · 2 questions`. Open it, read what it asked, type the answers
+into the same box, hit Generate again. That's the whole loop.
 
-Pick what kind of prompt you want:
+### Attachments
 
-| Mode | Produces |
-|---|---|
-| **Task** | an implementation prompt for Claude Code |
-| **Plan** | asks Claude to explore and plan before writing any code |
-| **Bug** | observed vs expected, repro steps, what's already ruled out |
-| **Refactor** | behaviour-preserving, incremental, verifiable |
-| **Review** | what to review, and what a finding has to include |
+Drop a README, spec or config onto a note — or use **Attach file** in the
+dropdown — and it rides along with every prompt from that note. Attachments are
+**re-read from disk on each run**, so editing your README updates the next prompt
+without re-attaching it. A clip badge on the note shows how many are on; click a
+chip to detach.
+
+Files are sent as *background, explicitly not the task*, so the checklist stays
+the scope. They're there so the model gets your real file names, commands and
+conventions right and stops asking about what they already answer — never so it
+can hand the contents back to you.
+
+Text files only, capped at 16k characters each and 32k combined; anything longer
+is truncated rather than dropped, and a missing or binary file shows as a warning
+chip with the reason instead of failing the run.
+
+### Then
 
 The result streams in live and is editable in place. **Copy** and **→ Claude**
 send the prompt alone — never the questions. **Save** keeps it as its own note,
@@ -173,6 +208,7 @@ passed in.
 
 Models that emit `<think>` blocks are handled — the reasoning is stripped out of
 the prompt rather than pasted into it.
+
 
 ## Settings
 
@@ -217,10 +253,12 @@ stickies/
 
 ## Notes on the look
 
-Every note is a rounded sheet of paper with a colour gradient, a soft sheen off
-the top-left corner, a strip of washi tape holding it up, a layered drop shadow
-and a curl at the bottom edge. Checkboxes are round bubbles, buttons are pills,
-and the actions are emoji rather than grey glyphs.
+Flat colour, no gradients anywhere — the paper is one tone, the header is
+separated by a hairline rather than a wash, and depth comes only from a layered
+shadow. Corners are 10px, buttons 6px, checkboxes precise rounded squares, and
+the icons are monochrome symbolic glyphs rather than emoji, which read as cheap
+at this size. Text is set with real line spacing, and the panel's section labels
+are small letterspaced caps rather than another boxed-in field.
 
 The stylesheet overrides the system GTK theme per-colour on every text-bearing
 node. Without that, a dark desktop theme paints light text onto light paper —

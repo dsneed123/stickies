@@ -60,12 +60,12 @@ class Deck(Gtk.Window):
         self.tabs = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=3)
         self.strip.pack_start(self.tabs, False, False, 0)
 
-        add_btn = util.text_button("＋", "New note  (Ctrl+N)")
+        add_btn = util.icon_button("list-add-symbolic", "New note  (Ctrl+N)", "+", css=())
         add_btn.get_style_context().add_class("deck-action")
         add_btn.connect("clicked", lambda *_: self.app.new_note())
         self.strip.pack_start(add_btn, False, False, 0)
 
-        menu_btn = util.text_button("≡", "Menu")
+        menu_btn = util.icon_button("open-menu-symbolic", "Menu", "\u2261", css=())
         menu_btn.get_style_context().add_class("deck-action")
         menu_btn.connect("clicked", self._on_menu)
         self.strip.pack_start(menu_btn, False, False, 0)
@@ -192,7 +192,7 @@ class Deck(Gtk.Window):
             lambda *_: (self.app.hide_note(note) if on_screen else self.app.show_note(note),
                         self.refresh()),
         ))
-        menu.append(util.menu_item("✨ Prompt", lambda *_: self.app.toggle_prompt(note)))
+        menu.append(util.menu_item("Write a prompt", lambda *_: self.app.toggle_prompt(note)))
         menu.append(util.separator())
         menu.append(util.menu_item("Delete note…", lambda *_: self._confirm_delete(note)))
         menu.show_all()

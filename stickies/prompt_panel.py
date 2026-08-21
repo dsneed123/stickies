@@ -1,4 +1,4 @@
-"""The ✨ panel that drops down out of a note.
+"""The prompt panel that drops down out of a note.
 
 Same job the old separate window did - take the note's open items, stream them
 through Ollama, hand back a Claude-ready prompt - but living inside the sticky
@@ -9,6 +9,7 @@ import re
 import shlex
 import subprocess
 import tempfile
+import threading
 
 import gi
 
@@ -18,16 +19,15 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gdk, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 
 from . import ollama, util
-from .store import (MODES, OPEN_QUESTIONS_MARKER, collect_attachments,
-                    item_counts, note_to_markdown)
-
-MODE_ORDER = ["claude_code", "plan", "bug", "refactor", "review"]
+from .store import (AUTO_MODE, CLASSIFIER_SYSTEM, MODE_ORDER, MODES,
+                    OPEN_QUESTIONS_MARKER, classifier_message,
+                    collect_attachments, item_counts, note_to_markdown)
 
 
 def build_user_message(note, mode_key, extra="", include_done=False, attachments=None):
-    mode = MODES.get(mode_key, MODES["claude_code"])
+    mode = MODES.get(mode_key, MODES["task"])
     source = note_to_markdown(note, include_done=include_done, marks=include_done)
-    parts = [mode["instruction"]]
+    parts = ["APPROACH — %s. %s" % (mode["label"], mode["instruction"])]
     if note.get("mode") == "list" and not include_done:
         parts.append(
             "Every line under NOTES is still outstanding. Ticked-off items were "
@@ -73,6 +73,8 @@ class PromptPanel(Gtk.Box):
         self._models = []
         self._splitter = None
         self._questions = ""
+        self._chosen_mode = None
+        self._classifying = False
         self.get_style_context().add_class("prompt-panel")
         self._build()
 
@@ -148,6 +150,7 @@ class PromptPanel(Gtk.Box):
         self.context_view.set_left_margin(4)
         self.context_view.set_right_margin(4)
         self.context_view.set_top_margin(3)
+        self.context_view.set_pixels_below_lines(2)
         self.context_view.get_buffer().set_text(self.note.get("prompt_context", "") or "")
         self.context_view.get_buffer().connect("changed", self._on_context_changed)
         self.context_scroll = util.scrolled(self.context_view)
@@ -158,7 +161,7 @@ class PromptPanel(Gtk.Box):
 
         attach_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         attach_btn = util.text_button(
-            "📎 attach file",
+            "Attach file",
             "Attach a README, spec or config so the model knows the project. "
             "Re-read from disk on every run — you can also drop files onto the note.",
         )
@@ -186,7 +189,8 @@ class PromptPanel(Gtk.Box):
         self.result_view.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.result_view.set_left_margin(5)
         self.result_view.set_right_margin(5)
-        self.result_view.set_top_margin(4)
+        self.result_view.set_top_margin(5)
+        self.result_view.set_pixels_below_lines(2)
         self.result_view.get_style_context().add_class("prompt-result")
         self.result_scroll = util.scrolled(self.result_view)
         self.result_scroll.get_style_context().add_class("prompt-field")
@@ -334,7 +338,8 @@ class PromptPanel(Gtk.Box):
             self._clear_questions()
             return
         self.questions_label.set_markup(
-            "<i>the model asked:</i>\n" + GLib.markup_escape_text(text)
+            "<span size='small'>%s</span>\n%s"
+            % ("THE MODEL ASKED", GLib.markup_escape_text(text))
         )
         self.questions_label.set_visible(True)
         self._label_thoughts()
@@ -370,15 +375,15 @@ class PromptPanel(Gtk.Box):
         for child in list(self.chips.get_children()):
             self.chips.remove(child)
         for item in collect_attachments(self.note):
-            label = "📄 %s" % item["name"]
+            label = item["name"]
             tooltip = item["path"]
             if item["error"]:
-                label = "⚠ %s" % item["name"]
+                label = "! %s" % item["name"]
                 tooltip += "\n%s" % item["error"]
             else:
                 tooltip += "\n%s characters of context" % f"{len(item['text']):,}"
             tooltip += "\nClick to detach"
-            chip = util.text_button(label + "  ✕", tooltip)
+            chip = util.text_button(label + "   ✕", tooltip)
             chip.get_style_context().add_class("panel-note")
             chip.connect("clicked", lambda _b, p=item["path"]: self.detach(p))
             self.chips.add(chip)
@@ -392,11 +397,18 @@ class PromptPanel(Gtk.Box):
 
     def _on_mode_menu(self, button):
         menu = Gtk.Menu()
-        current = self.store.settings.get("last_mode") or "claude_code"
+        current = self.store.settings.get("last_mode") or AUTO_MODE
+        auto = Gtk.CheckMenuItem(label="Auto — let the model pick")
+        auto.set_draw_as_radio(True)
+        auto.set_active(current == AUTO_MODE)
+        auto.connect("activate", lambda _i: self._set_mode(AUTO_MODE))
+        menu.append(auto)
+        menu.append(Gtk.SeparatorMenuItem())
         for key in MODE_ORDER:
             item = Gtk.CheckMenuItem(label=MODES[key]["label"])
             item.set_draw_as_radio(True)
             item.set_active(key == current)
+            item.set_tooltip_text(MODES[key]["when"].capitalize())
             item.connect("activate", lambda _i, k=key: self._set_mode(k))
             menu.append(item)
         menu.show_all()
@@ -405,7 +417,17 @@ class PromptPanel(Gtk.Box):
     def _set_mode(self, key):
         self.store.settings["last_mode"] = key
         self.store.save()
-        self.mode_btn.set_label("%s ▾" % MODES[key]["short"])
+        self._chosen_mode = None
+        self._sync_mode_label()
+
+    def _sync_mode_label(self):
+        key = self.store.settings.get("last_mode") or AUTO_MODE
+        if key == AUTO_MODE:
+            picked = self._chosen_mode
+            label = "Auto · %s" % MODES[picked]["short"] if picked else "Auto"
+        else:
+            label = MODES.get(key, MODES["task"])["short"]
+        self.mode_btn.set_label("%s ▾" % label)
 
     def _on_model_menu(self, button):
         menu = Gtk.Menu()
@@ -441,8 +463,7 @@ class PromptPanel(Gtk.Box):
             wanted = ollama.pick_default(self._models)
         self.store.settings["model"] = wanted
         self.model_btn.set_label("%s ▾" % wanted)
-        mode = self.store.settings.get("last_mode") or "claude_code"
-        self.mode_btn.set_label("%s ▾" % MODES.get(mode, MODES["claude_code"])["short"])
+        self._sync_mode_label()
         self._set_status("ready")
         return False
 
@@ -455,7 +476,7 @@ class PromptPanel(Gtk.Box):
         if not model:
             self._set_status("No Ollama model available.", error=True)
             return
-        mode_key = self.store.settings.get("last_mode") or "claude_code"
+        mode_key = self.store.settings.get("last_mode") or AUTO_MODE
 
         self.result_view.get_buffer().set_text("")
         self._clear_questions()
@@ -470,7 +491,56 @@ class PromptPanel(Gtk.Box):
             GLib.source_remove(self._timer_id)
         self._timer_id = GLib.timeout_add_seconds(1, self._tick)
 
+        if mode_key == AUTO_MODE:
+            self._chosen_mode = None
+            self._sync_mode_label()
+            self._classifying = True
+            self._set_status("choosing an approach…")
+            threading.Thread(target=self._classify, args=(model,), daemon=True).start()
+        else:
+            self._launch(mode_key, model)
+
+    def _classify(self, model):
+        """Ask the model which approach fits, then generate with it."""
         settings = self.store.settings
+        source = note_to_markdown(
+            self.note, include_done=self.include_done.get_active(), marks=False
+        )
+        key = "task"
+        try:
+            answer = ollama.chat_once(
+                settings.get("ollama_url", "http://localhost:11434"), model,
+                CLASSIFIER_SYSTEM, classifier_message(source, self.context_text),
+            )
+            key = self._match_mode(answer)
+        except ollama.OllamaError:
+            pass          # unreachable server surfaces on the generate call
+        except Exception:
+            pass          # a bad classification must never block the real work
+        GLib.idle_add(self._classified, key, model)
+
+    @staticmethod
+    def _match_mode(answer):
+        text = (answer or "").strip().lower()
+        for key in MODE_ORDER:
+            if text == key:
+                return key
+        for key in MODE_ORDER:
+            if re.search(r"\b%s\b" % key, text):
+                return key
+        return "task"
+
+    def _classified(self, key, model):
+        self._classifying = False
+        self._chosen_mode = key
+        self._sync_mode_label()
+        self._launch(key, model)
+        return False
+
+    def _launch(self, mode_key, model):
+        settings = self.store.settings
+        approach = MODES.get(mode_key, MODES["task"])["label"]
+        self._set_status("writing a %s prompt…" % approach.lower())
         self.job = ollama.StreamJob(
             settings.get("ollama_url", "http://localhost:11434"),
             model,
@@ -490,7 +560,12 @@ class PromptPanel(Gtk.Box):
 
     def _tick(self):
         self._elapsed += 1
-        self._set_status("writing…  %ds" % self._elapsed)
+        if self._classifying:
+            self._set_status("choosing an approach…  %ds" % self._elapsed)
+        else:
+            key = self._chosen_mode or self.store.settings.get("last_mode") or "task"
+            approach = MODES.get(key, MODES["task"])["label"]
+            self._set_status("writing a %s prompt…  %ds" % (approach.lower(), self._elapsed))
         return True
 
     def stop(self):

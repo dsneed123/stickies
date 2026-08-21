@@ -83,6 +83,31 @@ class ThinkSplitter:
         return ("", rest) if self._in_think else (rest, "")
 
 
+def chat_once(base_url, model, system, user, temperature=0.0, timeout=90):
+    """One non-streaming completion. Used for the short 'which approach?' call."""
+    body = json.dumps({
+        "model": model,
+        "messages": [{"role": "system", "content": system},
+                     {"role": "user", "content": user}],
+        "stream": False,
+        "options": {"temperature": float(temperature)},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        _url(base_url, "/api/chat"), data=body,
+        headers={"Content-Type": "application/json"}, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.URLError as exc:
+        raise OllamaError("Can't reach Ollama at %s (%s)." % (base_url, exc.reason))
+    except Exception as exc:
+        raise OllamaError("%s: %s" % (type(exc).__name__, exc))
+    if payload.get("error"):
+        raise OllamaError(str(payload["error"]))
+    return ((payload.get("message") or {}).get("content") or "").strip()
+
+
 class MarkerSplitter:
     """Splits a stream in two at the first occurrence of a marker line.
 

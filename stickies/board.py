@@ -139,8 +139,7 @@ class Board(Gtk.Window):
         )
         toggle.connect("clicked", lambda *_, n=note: self._toggle(n))
 
-        prompt_btn = util.text_button("✨")
-        prompt_btn.set_tooltip_text("Optimise prompt for Claude")
+        prompt_btn = util.icon_button("starred-symbolic", "Write a Claude prompt from this note", "*", css=())
         prompt_btn.connect("clicked", lambda *_, n=note: self.app.toggle_prompt(n))
 
         delete = util.icon_button("user-trash-symbolic", "Delete note", "🗑", css=())

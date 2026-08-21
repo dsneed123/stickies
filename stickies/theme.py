@@ -134,43 +134,24 @@ window.sticky-window { background-color: transparent; }
 
 /* ---- the paper ---- */
 .sticky {
-  border-radius: 13px;
+  border-radius: 10px;
   border-top: 1px solid rgba(255,255,255,0.55);
-  box-shadow: 0 1px 1px rgba(0,0,0,0.13),
-              0 4px 10px rgba(0,0,0,0.20),
-              0 12px 28px rgba(0,0,0,0.20),
-              0 22px 48px rgba(0,0,0,0.10);
+  box-shadow: 0 0 0 0.5px rgba(0,0,0,0.10),
+              0 1px 2px rgba(0,0,0,0.10),
+              0 4px 8px rgba(0,0,0,0.11),
+              0 12px 24px rgba(0,0,0,0.13);
 }
 /* the lift/curl at the bottom edge */
-.sticky-curl {
-  min-height: 6px;
-  background-image: linear-gradient(to bottom,
-      rgba(0,0,0,0.00) 0%,
-      rgba(0,0,0,0.05) 55%,
-      rgba(0,0,0,0.11) 100%);
-  border-radius: 0 0 13px 13px;
-}
-.sticky-header { padding: 0 2px 1px 4px; }
+.sticky-curl { min-height: 5px; background-image: none; }
+.sticky-header { padding: 0 4px 2px 8px; }
 /* the grab bar: generous target, faint dots so it reads as draggable */
 .sticky-grab { opacity: 0.30; }
-.tape {
-  min-width: 62px;
-  min-height: 14px;
-  margin-top: 1px;
-  border-radius: 1px;
-  background-image: linear-gradient(to bottom,
-      @stickies_tape 0%, rgba(255,255,255,0.06) 55%, @stickies_tape 100%);
-  border-left: 1px solid rgba(255,255,255,0.22);
-  border-right: 1px solid rgba(255,255,255,0.22);
-}
-.sticky-header:hover .tape {
-  background-image: linear-gradient(to bottom,
-      @stickies_tape 0%, rgba(255,255,255,0.20) 55%, @stickies_tape 100%);
-}
-.sticky-header:hover .sticky-grab { opacity: 0.5; }
+.tape { min-width: 58px; min-height: 13px; }
+.sticky-grab { opacity: 0.22; }
+.sticky-header:hover .sticky-grab { opacity: 0.45; }
 .sticky-header:hover .sticky-grab { opacity: 0.62; }
-.sticky-body   { padding: 2px 7px 0 7px; }
-.sticky-footer { padding: 0 4px 0 4px; }
+.sticky-body   { padding: 3px 11px 0 11px; }
+.sticky-footer { padding: 1px 7px 1px 7px; }
 
 /* ---- text ---- */
 .sticky entry,
@@ -189,8 +170,9 @@ window.sticky-window { background-color: transparent; }
 .sticky textview text selection { background-color: rgba(40,90,175,0.30); }
 .sticky entry:disabled, .sticky textview:disabled { color: inherit; }
 
-.sticky-title { font-weight: bold; font-size: 0.97em; letter-spacing: 0.2px; }
-.sticky-count { font-size: 0.76em; opacity: 0.6; padding-right: 3px; }
+.sticky-title { font-weight: 600; font-size: 1.0em; letter-spacing: -0.005em; }
+.sticky-count { font-size: 0.74em; opacity: 0.5; padding-right: 4px;
+                font-feature-settings: "tnum"; }
 .sticky-placeholder { opacity: 0.42; font-style: italic; }
 
 /* ---- chrome buttons: invisible until hovered ---- */
@@ -208,10 +190,10 @@ window.sticky-window { background-color: transparent; }
 .sticky button:hover {
   opacity: 1;
   background-color: rgba(0,0,0,0.09);
-  border-radius: 999px;
+  border-radius: 6px;
 }
-.sticky button:active  { background-color: rgba(0,0,0,0.16); border-radius: 999px; }
-.sticky button.toggled { opacity: 0.95; background-color: rgba(0,0,0,0.11); border-radius: 999px; }
+.sticky button:active  { background-color: rgba(0,0,0,0.14); border-radius: 6px; }
+.sticky button.toggled { opacity: 1; background-color: rgba(0,0,0,0.09); border-radius: 6px; }
 
 /* ---- checklist ---- */
 .sticky list, .sticky row, .sticky list row { background-color: transparent; }
@@ -226,7 +208,8 @@ window.sticky-window { background-color: transparent; }
 
 /* the one button that matters */
 .sticky button.format-b { font-weight: bold; font-family: serif; font-size: 1.05em; }
-.sticky button.primary { opacity: 0.88; font-weight: bold; padding: 0 10px; border-radius: 999px; }
+.sticky button.primary { opacity: 0.9; font-weight: 600; padding: 1px 9px; border-radius: 6px;
+                         letter-spacing: 0.01em; }
 .sticky button.primary:hover { opacity: 1; }
 
 .sticky-grip { opacity: 0.30; }
@@ -250,6 +233,22 @@ window.sticky-window { background-color: transparent; }
 """
 
 
+def _hex_to_rgb(value):
+    value = value.lstrip("#")
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def _blend(a, b, amount):
+    """Mix two hex colours. amount=0 -> a, amount=1 -> b."""
+    ra, ga, ba = _hex_to_rgb(a)
+    rb, gb, bb = _hex_to_rgb(b)
+    return "#%02x%02x%02x" % (
+        round(ra + (rb - ra) * amount),
+        round(ga + (gb - ga) * amount),
+        round(ba + (bb - ba) * amount),
+    )
+
+
 def _color_rules(palette, tokens):
     """Per-colour rules. These carry an extra class of specificity so they win
     against the system theme - without this, a dark GTK theme paints light text
@@ -261,16 +260,15 @@ def _color_rules(palette, tokens):
 /* paper */
 .sticky-%(n)s .sticky, .sticky.sticky-%(n)s {
   color: %(ink)s;
-  background-image:
-    radial-gradient(ellipse at 18%% -8%%, %(sheen)s 0%%, rgba(255,255,255,0) 62%%),
-    linear-gradient(to bottom, %(top)s 0%%, %(bottom)s 100%%);
+  background-color: %(paper)s;
+  background-image: none;
   border-left: 1px solid %(edge)s;
   border-right: 1px solid %(edge)s;
   border-bottom: 1px solid %(edge)s;
 }
 .sticky-%(n)s .sticky-header {
-  background-image: linear-gradient(to bottom,
-      rgba(0,0,0,0.045) 0%%, rgba(0,0,0,0.012) 78%%, rgba(0,0,0,0.00) 100%%);
+  background-color: %(paper)s;
+  background-image: none;
   border-bottom: 1px solid %(strip)s;
 }
 .sticky-%(n)s .sticky-footer { border-top: 1px solid %(strip)s; }
@@ -313,9 +311,9 @@ def _color_rules(palette, tokens):
   box-shadow: none;
   text-shadow: none;
 }
-.sticky-%(n)s .sticky button:hover  { background-color: %(hover)s; border-radius: 999px; }
-.sticky-%(n)s .sticky button:active { background-color: %(active)s; border-radius: 999px; }
-.sticky-%(n)s .sticky button.toggled { background-color: %(active)s; border-radius: 999px; }
+.sticky-%(n)s .sticky button:hover  { background-color: %(hover)s; border-radius: 6px; }
+.sticky-%(n)s .sticky button:active { background-color: %(active)s; border-radius: 6px; }
+.sticky-%(n)s .sticky button.toggled { background-color: %(hover)s; border-radius: 6px; }
 
 /* selection */
 .sticky-%(n)s .sticky entry selection,
@@ -326,19 +324,19 @@ def _color_rules(palette, tokens):
 
 /* checkbox drawn as ink on paper, not as a themed widget */
 .sticky-%(n)s .sticky check {
-  min-width: 13px;
-  min-height: 13px;
+  min-width: 14px;
+  min-height: 14px;
   background-image: none;
   background-color: %(check)s;
   border: 1px solid %(edge)s;
-  border-radius: 999px;
+  border-radius: 4px;
   box-shadow: none;
   color: %(ink)s;
 }
 .sticky-%(n)s .sticky check:hover   { background-color: %(check_hover)s; }
 .sticky-%(n)s .sticky check:checked { background-color: %(strip)s; color: %(ink)s; }
 
-.swatch-%(n)s { background-image: linear-gradient(to bottom, %(top)s, %(bottom)s);
+.swatch-%(n)s { background-color: %(paper)s; background-image: none;
                 border: 1px solid %(edge)s; }
 
 /* must out-specify the `.deck button` reset, which lands later in the sheet */
@@ -347,18 +345,19 @@ def _color_rules(palette, tokens):
   color: %(ink)s;
 }
 .deck button.deck-tab.deck-%(n)s {
-  background-image: linear-gradient(to bottom, %(top)s 0%%, %(bottom)s 100%%);
+  background-color: %(paper)s;
+  background-image: none;
   border: 1px solid %(edge)s;
 }
 .deck button.deck-tab.deck-%(n)s:hover {
-  background-image: linear-gradient(to bottom, %(top)s 0%%, %(strip)s 100%%);
+  background-color: %(strip)s;
   border-color: rgba(0,0,0,0.40);
 }
 """
             % {"n": name, "top": top, "bottom": bottom, "strip": strip,
                "edge": edge, "ink": ink,
                "hover": tokens["hover"], "active": tokens["active"],
-               "check": tokens["check"], "sheen": tokens["sheen"],
+               "check": tokens["check"], "paper": _blend(top, bottom, 0.55),
                "check_hover": tokens["check"].replace("0.60", "0.85")
                                              .replace("0.72", "0.92")
                                              .replace("0.70", "0.90")
@@ -391,10 +390,16 @@ _PANEL_CSS = """
   background-color: @stickies_field;
   background-image: none;
   border: 1px solid @stickies_field_border;
-  border-radius: 12px;
+  border-radius: 7px;
 }
-.sticky .prompt-result { font-family: monospace; font-size: 0.84em; }
-.sticky .panel-note { font-size: 0.78em; opacity: 0.62; }
+.sticky .prompt-result { font-family: monospace; font-size: 0.82em; }
+.sticky .panel-label {
+  font-size: 0.68em;
+  letter-spacing: 0.10em;
+  opacity: 0.42;
+  font-weight: 600;
+}
+.sticky .panel-note { font-size: 0.76em; opacity: 0.55; letter-spacing: 0.005em; }
 .sticky .panel-note:hover { opacity: 0.92; }
 .sticky label.error { color: #8f2c22; opacity: 0.95; }
 .sticky .prompt-panel button { opacity: 0.62; }
@@ -405,8 +410,8 @@ _PANEL_CSS = """
   padding: 0 8px;
   background-color: @stickies_field;
   border: 1px solid @stickies_field_border;
-  border-radius: 999px;
-  opacity: 0.75;
+  border-radius: 6px;
+  opacity: 0.72;
 }
 .sticky .prompt-panel flowbox button:hover {
   opacity: 1;
@@ -416,17 +421,19 @@ _PANEL_CSS = """
 
 _DECK_CSS = """
 .deck {
-  background-image: linear-gradient(to bottom,
-      rgba(42,42,52,0.95) 0%, rgba(30,30,38,0.95) 100%);
-  border-radius: 999px;
-  padding: 4px 9px 5px 9px;
-  border: 1px solid rgba(255,255,255,0.13);
-  box-shadow: 0 3px 10px rgba(0,0,0,0.34), 0 10px 30px rgba(0,0,0,0.24);
+  background-color: rgba(28,28,34,0.97);
+  background-image: none;
+  border-radius: 12px;
+  padding: 5px 10px 6px 10px;
+  border: 1px solid rgba(255,255,255,0.09);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06),
+              0 1px 2px rgba(0,0,0,0.30),
+              0 8px 22px rgba(0,0,0,0.30);
 }
 .deck-grip { color: #ececf2; opacity: 0.30; }
 .deck.deck-hot {
-  background-image: linear-gradient(to bottom,
-      rgba(96,96,120,0.97) 0%, rgba(64,64,84,0.97) 100%);
+  background-color: rgba(74,74,94,0.97);
+  background-image: none;
   border-color: rgba(255,255,255,0.34);
   box-shadow: 0 5px 20px rgba(0,0,0,0.5);
 }
@@ -440,15 +447,16 @@ _DECK_CSS = """
   min-height: 22px;
   padding: 0 6px;
 }
-.deck-action { color: #ececf2; opacity: 0.55; border-radius: 999px; font-size: 1.15em; }
+.deck-action { color: #ececf2; opacity: 0.5; border-radius: 6px; font-size: 1.0em; }
 .deck-action:hover { opacity: 1; background-color: rgba(255,255,255,0.14); }
 
 .deck-tab {
-  border-radius: 999px;
+  border-radius: 7px;
   padding: 0 10px;
   border: 1px solid rgba(0,0,0,0.25);
-  font-size: 0.86em;
+  font-size: 0.83em;
   min-height: 21px;
+  letter-spacing: 0.005em;
 }
 .deck-tab:hover { border-color: rgba(0,0,0,0.45); }
 .deck-tab:active { padding-top: 1px; }
@@ -458,7 +466,7 @@ _DECK_CSS = """
   font-size: 0.72em;
   opacity: 0.55;
   padding: 0 4px;
-  border-radius: 13px;
+  border-radius: 10px;
   background-color: rgba(0,0,0,0.10);
 }
 """
