@@ -282,6 +282,9 @@ class Store:
         settings.update(raw.get("settings") or {})
         if settings.get("system_prompt") in SUPERSEDED_SYSTEM_PROMPTS:
             settings["system_prompt"] = DEFAULT_SYSTEM_PROMPT
+        # approaches were renamed and expanded; retire any key that no longer exists
+        if settings.get("last_mode") not in MODES and settings.get("last_mode") != AUTO_MODE:
+            settings["last_mode"] = AUTO_MODE
         self.data = {"version": 1, "notes": notes, "settings": settings}
 
     def save_now(self):
