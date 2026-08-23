@@ -13,6 +13,7 @@ from .deck import Deck
 from .grid import GridMode
 from .note_window import SHADOW_MARGIN, StickyNote
 from .settings_window import SettingsWindow
+from .stats_window import StatsWindow
 from .store import Store, new_note
 
 WELCOME_ITEMS = [
@@ -33,6 +34,7 @@ class StickiesApp(Gtk.Application):
         self.windows = {}          # note id -> StickyNote
         self._pre_arrange = None   # {id: (x, y)} before the last "Arrange"
         self.grid = GridMode(self)
+        self.stats = None
         self.board = None
         self.deck = None
         self.settings_window = None
@@ -59,6 +61,8 @@ class StickiesApp(Gtk.Application):
             self._create_welcome_note()
         if self.store.settings.get("show_deck", True):
             self.open_deck()
+        if self.store.settings.get("show_stats", False):
+            self.open_stats()
         opened = 0
         for note in list(self.store.notes):
             if note.get("visible", True):
@@ -92,6 +96,8 @@ class StickiesApp(Gtk.Application):
             window.destroy()
         if self.deck:
             self.deck.destroy()
+        if self.stats:
+            self.stats.destroy()
         if self.board:
             self.board.destroy()
         if self.settings_window:
@@ -224,8 +230,32 @@ class StickiesApp(Gtk.Application):
             window.note["x"], window.note["y"] = int(x), int(y)
         self.store.save()
 
+    def open_stats(self):
+        if self.stats is None:
+            self.stats = StatsWindow(self)
+            self.add_window(self.stats)
+        self.stats.refresh()
+        self.stats.show_all()
+        self.stats.present()
+        return self.stats
+
+    def set_stats_visible(self, on):
+        self.store.settings["show_stats"] = bool(on)
+        self.store.save()
+        if on:
+            self.open_stats()
+        elif self.stats is not None:
+            stats, self.stats = self.stats, None
+            self.remove_window(stats)
+            stats.destroy()
+
+    def refresh_stats(self):
+        if self.stats is not None:
+            GLib.idle_add(self.stats.refresh)
+
     def notify_note_changed(self, _note):
         self.grid.reflow()
+        self.refresh_stats()
         self._refresh_board()
         self._refresh_deck()
 

@@ -67,6 +67,10 @@ Each note is its own borderless, always-on-top window.
 | **B** | formatting (text mode only) |
 | clip | attach a file as context — click again to see or detach what's on |
 | calendar | attach dates or events to the note (Ctrl+E); the next one shows in the header |
+
+There's also an **analytics widget** (deck menu → Analytics widget): a small
+always-on-top panel with items ticked today / this week, your day streak, a
+two-week chart, the notes with the most open work and the next attached dates.
 | dropper | note colour — seven shades in whichever theme you're using |
 | ✕ | hides the note; it stays in the deck until you delete it |
 | **Drop a file on it** | attaches that file as context for the note's prompts |

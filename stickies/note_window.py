@@ -111,6 +111,7 @@ class ChecklistRow(Gtk.ListBoxRow):
     def _on_toggled(self, *_):
         self.item["done"] = self.check.get_active()
         self._sync_strike()
+        self.note_window.record_item_toggle(self.item)
         self.note_window.on_items_changed()
 
     def _on_changed(self, *_):
@@ -524,6 +525,18 @@ class StickyNote(Gtk.Window):
             self.prompt_btn.set_label("Prompt · %d" % open_n)
         else:
             self.prompt_btn.set_label("Prompt")
+
+    def record_item_toggle(self, item):
+        if self._loading:
+            return
+        text = (item.get("text") or "").strip()
+        if not text:
+            return
+        if item.get("done"):
+            self.store.record_done(self.note, text)
+        else:
+            self.store.record_undone(self.note, text)
+        self.app.refresh_stats()
 
     def on_items_changed(self):
         self._update_count()

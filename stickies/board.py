@@ -79,6 +79,8 @@ class Board(Gtk.Window):
         menu.append(util.separator())
         menu.append(util.arrange_submenu(self.app))
         menu.append(util.separator())
+        menu.append(util.check_item("Analytics widget", self.app.store.settings.get("show_stats"),
+                                    lambda i: self.app.set_stats_visible(i.get_active())))
         menu.append(util.menu_item("Settings…", lambda *_: self.app.open_settings()))
         menu.append(util.separator())
         menu.append(util.menu_item("Quit Stickies", lambda *_: self.app.quit_app()))

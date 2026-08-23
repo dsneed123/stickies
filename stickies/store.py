@@ -203,6 +203,8 @@ DEFAULT_SETTINGS = {
     "theme": "classic",
     "default_color": "yellow",
     "show_deck": True,
+    "show_stats": False,
+    "stats_position": None,
     "deck_position": None,
     "deck_max_tabs": 8,
     "grid_gap": 16,
@@ -252,7 +254,7 @@ class Store:
         self.path = path
         self._lock = threading.RLock()
         self._timer = None
-        self.data = {"version": 1, "notes": [], "settings": dict(DEFAULT_SETTINGS)}
+        self.data = {"version": 1, "notes": [], "settings": dict(DEFAULT_SETTINGS), "history": []}
         self.load()
 
     # ---------- io ----------
@@ -293,7 +295,9 @@ class Store:
         # approaches were renamed and expanded; retire any key that no longer exists
         if settings.get("last_mode") not in MODES and settings.get("last_mode") != AUTO_MODE:
             settings["last_mode"] = AUTO_MODE
-        self.data = {"version": 1, "notes": notes, "settings": settings}
+        history = [h for h in (raw.get("history") or [])
+                   if isinstance(h, dict) and h.get("ts") and h.get("text") is not None]
+        self.data = {"version": 1, "notes": notes, "settings": settings, "history": history}
 
     def save_now(self):
         with self._lock:
@@ -335,6 +339,30 @@ class Store:
     @property
     def settings(self):
         return self.data["settings"]
+
+    @property
+    def history(self):
+        return self.data.setdefault("history", [])
+
+    def record_done(self, note, text):
+        """A checklist item was ticked: remember when, for the analytics."""
+        self.history.append({
+            "ts": _now(), "note": note["id"],
+            "note_title": (note.get("title") or "").strip(), "text": text.strip(),
+        })
+        if len(self.history) > 5000:
+            del self.history[: len(self.history) - 5000]
+        self.save(delay=2.0)
+
+    def record_undone(self, note, text):
+        """Unticked again: drop the matching completion so it doesn't count."""
+        text = text.strip()
+        for i in range(len(self.history) - 1, -1, -1):
+            entry = self.history[i]
+            if entry.get("note") == note["id"] and entry.get("text") == text:
+                del self.history[i]
+                break
+        self.save(delay=2.0)
 
     def get(self, note_id):
         for note in self.data["notes"]:

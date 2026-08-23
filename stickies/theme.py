@@ -434,6 +434,18 @@ _DECK_CSS = """
               0 8px 22px rgba(0,0,0,0.30);
 }
 .deck-grip { color: #ececf2; opacity: 0.30; }
+.stats-widget {
+  background-color: rgba(34,34,42,0.94);
+  border-radius: 13px;
+  padding: 10px 12px 12px 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+}
+.stats-widget label { color: #ececf2; }
+.stats-title { font-weight: bold; font-size: 0.92em; opacity: 0.9; }
+.stats-big { font-size: 1.5em; font-weight: bold; color: #f7b840; }
+.stats-small { font-size: 0.72em; opacity: 0.55; }
+.stats-heading { font-size: 0.74em; opacity: 0.55; margin-top: 4px; }
+.stats-row { font-size: 0.84em; opacity: 0.92; }
 .deck.deck-hot {
   background-color: rgba(74,74,94,0.97);
   background-image: none;
