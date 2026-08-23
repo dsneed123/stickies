@@ -2,6 +2,7 @@
 
 import os
 import re
+from datetime import date
 
 import gi
 
@@ -10,8 +11,9 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GLib, Gtk, Pango  # noqa: E402
 
 from . import theme, util
+from .calendar_popover import CalendarPopover
 from .prompt_panel import PromptPanel
-from .store import COLORS, collect_attachments, note_to_markdown
+from .store import COLORS, collect_attachments, describe_day, next_event, normalize_events, note_to_markdown
 from .theme import COLOR_LABELS
 
 SHADOW_MARGIN = 9  # transparent gutter the drop shadow is painted into
@@ -175,6 +177,7 @@ class StickyNote(Gtk.Window):
         self._apply_mode(note.get("mode", "text"), initial=True)
         self._apply_flags()
         self.update_attachment_badge()
+        self.update_date_badge()
         self._place()
 
         self.drag_dest_set(Gtk.DestDefaults.ALL, [], Gdk.DragAction.COPY)
@@ -278,6 +281,24 @@ class StickyNote(Gtk.Window):
         self.attach_label.show()
         box.pack_start(self.attach_badge, False, False, 0)
 
+        self.date_badge = Gtk.EventBox()
+        self.date_badge.set_visible_window(False)
+        self.date_badge.set_no_show_all(True)
+        self.date_badge.set_valign(Gtk.Align.CENTER)
+        self.date_badge.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.date_badge.connect("button-press-event", self._on_date_badge_press)
+        date_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=2)
+        cal_icon = Gtk.Image.new_from_icon_name("x-office-calendar-symbolic", Gtk.IconSize.MENU)
+        cal_icon.get_style_context().add_class("sticky-count")
+        self.date_label = Gtk.Label()
+        self.date_label.get_style_context().add_class("sticky-count")
+        self.date_label.get_style_context().add_class("sticky-date")
+        date_row.pack_start(cal_icon, False, False, 0)
+        date_row.pack_start(self.date_label, False, False, 0)
+        self.date_badge.add(date_row)
+        date_row.show_all()
+        box.pack_start(self.date_badge, False, False, 0)
+
         self.count_label = Gtk.Label()
         self.count_label.get_style_context().add_class("sticky-count")
         self.count_label.set_no_show_all(True)
@@ -359,6 +380,11 @@ class StickyNote(Gtk.Window):
             "Attach a file as context for this note's prompts", "\u2317")
         self.attach_btn.connect("clicked", self._on_attach_clicked)
 
+        self.calendar_btn = util.icon_button(
+            "x-office-calendar-symbolic", "Dates & events on this note  (Ctrl+E)", "\U0001f4c5")
+        self.calendar_btn.connect("clicked", lambda *_: self.open_calendar())
+        self.calendar = None
+
         self.prompt_btn = prompt_btn = util.text_button("Prompt")
         prompt_btn.get_style_context().add_class("primary")
         prompt_btn.set_tooltip_text(
@@ -371,7 +397,7 @@ class StickyNote(Gtk.Window):
         self.format_btn.set_no_show_all(True)  # show_all() must not resurrect it
         self.format_btn.connect("clicked", self._on_format_menu)
 
-        for btn in (self.mode_btn, self.format_btn, self.attach_btn, self.color_btn):
+        for btn in (self.mode_btn, self.format_btn, self.attach_btn, self.calendar_btn, self.color_btn):
             self.footer.pack_start(btn, False, False, 0)
         self.footer.pack_start(prompt_btn, False, False, 4)
 
@@ -944,6 +970,8 @@ class StickyNote(Gtk.Window):
             self.app.duplicate_note(self.note)
         elif key in (Gdk.KEY_g, Gdk.KEY_G):
             self.app.arrange_notes()
+        elif key in (Gdk.KEY_e, Gdk.KEY_E):
+            self.open_calendar()
         elif key in (Gdk.KEY_t, Gdk.KEY_T):
             self.toggle_mode()
         elif key in (Gdk.KEY_l, Gdk.KEY_L):
@@ -1053,6 +1081,52 @@ class StickyNote(Gtk.Window):
         menu.show_all()
         menu.popup_at_widget(button, Gdk.Gravity.NORTH_WEST, Gdk.Gravity.SOUTH_WEST, None)
 
+    # ---------------------------------------------------------------- calendar
+
+    def open_calendar(self):
+        if self.note.get("collapsed"):
+            self.toggle_collapsed()
+        if self.calendar is None:
+            self.calendar = CalendarPopover(self, self.calendar_btn)
+        self.calendar.popup()
+
+    def calendar_closed(self):
+        self.calendar = None   # rebuilt fresh next time, so it re-reads the note
+
+    def _on_date_badge_press(self, _widget, event):
+        if event.button == 1:
+            self.open_calendar()
+            return True
+        return False
+
+    def on_events_changed(self):
+        self.update_date_badge()
+        self.schedule_save()
+        self.app.notify_note_changed(self.note)
+
+    def update_date_badge(self):
+        events = normalize_events(self.note.get("events"))
+        ctx = self.date_label.get_style_context()
+        for name in ("sticky-date-due", "sticky-date-past"):
+            ctx.remove_class(name)
+        if not events:
+            self.date_badge.set_visible(False)
+            return
+        soon = next_event(self.note)
+        text = describe_day(soon["date"])
+        if len(events) > 1:
+            text += "  +%d" % (len(events) - 1)
+        self.date_label.set_text(text)
+        today = date.today().isoformat()
+        if soon["date"] == today:
+            ctx.add_class("sticky-date-due")
+        elif soon["date"] < today:
+            ctx.add_class("sticky-date-past")
+        self.date_badge.set_tooltip_text("\n".join(
+            "%s%s" % (describe_day(e["date"]), "  —  " + e["label"] if e["label"] else "")
+            for e in events) + "\n\nclick to open the calendar")
+        self.date_badge.set_visible(True)
+
     def update_attachment_badge(self):
         count = len(self.note.get("attachments") or [])
         self.attach_label.set_text(str(count) if count else "")
@@ -1123,6 +1197,7 @@ class StickyNote(Gtk.Window):
         add(util.menu_item("Prompt panel",
                            lambda *_: self.toggle_prompt()))
         add(util.menu_item("Attach a file as context…", lambda *_: self._menu_attach()))
+        add(util.menu_item("Dates & events…", lambda *_: self.open_calendar()))
         add(util.menu_item("Copy note text",
                            lambda *_: util.copy_to_clipboard(note_to_markdown(self.note))))
         add(util.separator())
@@ -1242,6 +1317,7 @@ class StickyNote(Gtk.Window):
             self.textview.get_buffer().set_text(self.note.get("text", ""))
         self._apply_color(self.note.get("color", "yellow"))
         self._apply_flags()
+        self.update_date_badge()
         self._loading = False
 
     def present_note(self):
@@ -1251,6 +1327,7 @@ class StickyNote(Gtk.Window):
         self.count_label.set_visible(is_list)
         self.format_btn.set_visible(not is_list)
         self.update_attachment_badge()
+        self.update_date_badge()
         self.stack.set_visible_child_name("list" if is_list else "text")
         self.apply_collapsed_state()
         self.present()

@@ -5,7 +5,7 @@ import os
 import shutil
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 DATA_DIR = os.path.join(
     os.environ.get("XDG_DATA_HOME", os.path.expanduser("~/.local/share")), "stickies"
@@ -238,6 +238,7 @@ def new_note(color="yellow", x=None, y=None):
         "collapsed": False,
         "prompt_context": "",
         "attachments": [],
+        "events": [],          # [{"date": "YYYY-MM-DD", "label": "..."}]
         "created": _now(),
         "updated": _now(),
     }
@@ -279,6 +280,7 @@ class Store:
             # resized, so bring them down to the new compact default
             if (note.get("w"), note.get("h")) in ((320, 340), (340, 360)):
                 note["w"], note["h"] = 236, 248
+            note["events"] = normalize_events(note.get("events"))
             note["items"] = [
                 {"text": str(i.get("text", "")), "done": bool(i.get("done"))}
                 for i in (note.get("items") or [])
@@ -450,6 +452,68 @@ def collect_attachments(note, total_limit=MAX_ATTACHMENT_TOTAL):
     return out
 
 
+# ------------------------------------------------------------------ events
+
+def normalize_events(events):
+    """Keep only well-formed {"date": ISO day, "label": str} entries, sorted."""
+    out = []
+    for event in events or []:
+        if not isinstance(event, dict):
+            continue
+        try:
+            day = date.fromisoformat(str(event.get("date", ""))[:10])
+        except ValueError:
+            continue
+        out.append({"date": day.isoformat(), "label": str(event.get("label") or "").strip()})
+    out.sort(key=lambda e: (e["date"], e["label"]))
+    return out
+
+
+def add_event(note, day, label=""):
+    """Attach ``day`` (a date) to the note; returns the new event."""
+    event = {"date": day.isoformat(), "label": (label or "").strip()}
+    events = normalize_events(note.get("events"))
+    if event not in events:
+        events.append(event)
+    note["events"] = normalize_events(events)
+    return event
+
+
+def remove_event(note, event):
+    note["events"] = [e for e in normalize_events(note.get("events")) if e != event]
+
+
+def events_on(note, day):
+    iso = day.isoformat()
+    return [e for e in normalize_events(note.get("events")) if e["date"] == iso]
+
+
+def next_event(note, today=None):
+    """The soonest event on or after today, else the latest past one."""
+    events = normalize_events(note.get("events"))
+    if not events:
+        return None
+    today = (today or date.today()).isoformat()
+    upcoming = [e for e in events if e["date"] >= today]
+    return upcoming[0] if upcoming else events[-1]
+
+
+def describe_day(iso, today=None):
+    """'Today', 'Tomorrow', 'Yesterday', 'Mon 24 Aug' or '24 Aug 2027'."""
+    today = today or date.today()
+    day = date.fromisoformat(iso)
+    delta = (day - today).days
+    if delta == 0:
+        return "Today"
+    if delta == 1:
+        return "Tomorrow"
+    if delta == -1:
+        return "Yesterday"
+    if day.year == today.year:
+        return day.strftime("%a %-d %b")
+    return day.strftime("%-d %b %Y")
+
+
 def note_to_markdown(note, include_done=True, marks=True):
     """Plain-text rendering of a note.
 
@@ -474,6 +538,12 @@ def note_to_markdown(note, include_done=True, marks=True):
                 lines.append("- " + text)
     else:
         lines.append(text_with_markdown(note).rstrip())
+    events = normalize_events(note.get("events"))
+    if events:
+        lines.append("")
+        lines.append("Dates:")
+        for event in events:
+            lines.append("- %s%s" % (event["date"], " — " + event["label"] if event["label"] else ""))
     return "\n".join(lines).strip()
 
 

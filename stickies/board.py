@@ -7,7 +7,7 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, Gtk, Pango  # noqa: E402
 
 from . import util
-from .store import note_to_markdown
+from .store import describe_day, next_event, note_to_markdown
 from .theme import COLOR_LABELS
 
 
@@ -155,6 +155,14 @@ class Board(Gtk.Window):
         return row
 
     def _preview(self, note):
+        soon = next_event(note)
+        prefix = ""
+        if soon is not None:
+            prefix = "\U0001f4c5 %s%s  ·  " % (describe_day(soon["date"]),
+                                             " " + soon["label"] if soon["label"] else "")
+        return prefix + self._body_preview(note)
+
+    def _body_preview(self, note):
         if note.get("mode") == "list":
             items = [i for i in note.get("items", []) if i.get("text", "").strip()]
             done = sum(1 for i in items if i.get("done"))

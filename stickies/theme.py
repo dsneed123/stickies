@@ -171,6 +171,9 @@ window.sticky-window { background-color: transparent; }
 .sticky entry:disabled, .sticky textview:disabled { color: inherit; }
 
 .sticky-title { font-weight: 600; font-size: 1.0em; letter-spacing: -0.005em; }
+.sticky-date-due { color: #c0392b; opacity: 1; font-weight: bold; }
+.sticky-date-past { opacity: 0.35; text-decoration: line-through; }
+.calendar-popover calendar { font-size: 0.9em; }
 .sticky-count { font-size: 0.74em; opacity: 0.5; padding-right: 4px;
                 font-feature-settings: "tnum"; }
 .sticky-placeholder { opacity: 0.42; font-style: italic; }
