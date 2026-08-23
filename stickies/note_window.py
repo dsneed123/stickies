@@ -157,6 +157,7 @@ class StickyNote(Gtk.Window):
         self._pending_formats = set()
         self._dock_source = None
         self._dock_blocked_until = 0
+        self._dragging = False
 
         self.set_decorated(False)
         self.set_resizable(True)
@@ -774,7 +775,18 @@ class StickyNote(Gtk.Window):
             self.note.update({"x": x, "y": y, "w": w, "h": h})
             self.store.save(delay=1.5)
         self._check_dock(x, y, w)
+        if self._dragging:
+            self.app.grid.on_drag_moved(self)
         return False
+
+    def begin_user_move(self, button, x_root, y_root, time):
+        """Start a window-manager move and remember that the user is dragging,
+        so the grid can preview and snap the drop."""
+        self._dragging = True
+        self.begin_move_drag(button, x_root, y_root, time)
+
+    def drag_finished(self):
+        self._dragging = False
 
     # ------------------------------------------------------------ deck docking
 
@@ -828,7 +840,7 @@ class StickyNote(Gtk.Window):
             self.toggle_collapsed()
             return True
         if event.button == 1:
-            self.begin_move_drag(event.button, int(event.x_root), int(event.y_root), event.time)
+            self.begin_user_move(event.button, int(event.x_root), int(event.y_root), event.time)
             return True
         if event.button == 3:
             self._popup_menu(event)
@@ -851,7 +863,7 @@ class StickyNote(Gtk.Window):
 
     def _on_any_press(self, _widget, event):
         if event.button == 2:  # middle-drag moves the note from anywhere
-            self.begin_move_drag(event.button, int(event.x_root), int(event.y_root), event.time)
+            self.begin_user_move(event.button, int(event.x_root), int(event.y_root), event.time)
             return True
         if event.button == 3:
             self._popup_menu(event)
@@ -877,7 +889,7 @@ class StickyNote(Gtk.Window):
         if max(abs(event.x_root - ox), abs(event.y_root - oy)) < self.DRAG_THRESHOLD:
             return False
         self._drag_origin = None
-        self.begin_move_drag(1, int(ox), int(oy), otime)
+        self.begin_user_move(1, int(ox), int(oy), otime)
         return True
 
     def _on_title_release(self, *_):
@@ -1171,6 +1183,7 @@ class StickyNote(Gtk.Window):
 
     def shutdown(self):
         self._cancel_dock()
+        self._dragging = False
         if self.prompt_panel is not None:
             self.prompt_panel.shutdown()
 
@@ -1178,6 +1191,8 @@ class StickyNote(Gtk.Window):
         if self.prompt_panel is not None:
             self.prompt_panel.shutdown()
         self.note["visible"] = False
+        self._dragging = False
+        self.app.grid.cancel_drag()
         self.store.save()
         self.hide()
         self.app.notify_note_changed(self.note)

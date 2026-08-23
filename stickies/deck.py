@@ -194,7 +194,7 @@ class Deck(Gtk.Window):
         window.suppress_docking(1400)                  # or it snaps straight back
         window.move(int(event.x_root) - 60, drop_y)
         # hand the drag to the window manager so the note follows the cursor
-        window.begin_move_drag(1, int(event.x_root), drop_y, event.time)
+        window.begin_user_move(1, int(event.x_root), drop_y, event.time)
         self.refresh()
         return True
 

@@ -132,10 +132,25 @@ def arrange_submenu(app):
     """'Arrange' menu shared by the deck, the board and the note menu."""
     item = Gtk.MenuItem(label="Arrange")
     sub = Gtk.Menu()
-    sub.append(menu_item("Into a grid", lambda *_: app.arrange_notes()))
-    sub.append(menu_item("Into a grid, tallest first", lambda *_: app.arrange_notes(by_size=True)))
+    sub.append(menu_item("Into a grid now", lambda *_: app.arrange_notes()))
+    sub.append(menu_item("Into a grid, in the order they were made",
+                         lambda *_: app.arrange_notes(by_size=False)))
     restore = menu_item("Restore previous layout", lambda *_: app.restore_layout())
     restore.set_sensitive(bool(getattr(app, "_pre_arrange", None)))
     sub.append(restore)
+    sub.append(separator())
+    sub.append(check_item("Keep notes snapped to the grid", app.grid.enabled,
+                          lambda i: app.grid.set_enabled(i.get_active())))
+    side = Gtk.MenuItem(label="Grid takes the")
+    side_menu = Gtk.Menu()
+    current = app.store.settings.get("grid_side", "left")
+    for key, label in (("left", "Left half of the screen"), ("right", "Right half of the screen")):
+        entry = Gtk.CheckMenuItem(label=label)
+        entry.set_draw_as_radio(True)
+        entry.set_active(key == current)
+        entry.connect("activate", lambda _i, k=key: app.set_grid_side(k))
+        side_menu.append(entry)
+    side.set_submenu(side_menu)
+    sub.append(side)
     item.set_submenu(sub)
     return item

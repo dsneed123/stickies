@@ -135,6 +135,17 @@ class SettingsWindow(Gtk.Window):
         grid2.attach(self._label("Grid spacing (px)"), 0, 8, 1, 1)
         grid2.attach(self.gap_spin, 1, 8, 1, 1)
 
+        self.side_combo = Gtk.ComboBoxText()
+        self.side_combo.append("left", "Left half of the screen")
+        self.side_combo.append("right", "Right half of the screen")
+        self.side_combo.set_active_id(settings.get("grid_side", "left"))
+        grid2.attach(self._label("Grid lives in the"), 0, 9, 1, 1)
+        grid2.attach(self.side_combo, 1, 9, 1, 1)
+
+        self.snap_check = Gtk.CheckButton(label="Keep notes snapped to the grid")
+        self.snap_check.set_active(bool(settings.get("grid_mode", False)))
+        grid2.attach(self.snap_check, 1, 10, 2, 1)
+
         self.hand_check = Gtk.CheckButton(label="Handwritten font")
         self.hand_check.set_active(bool(settings.get("handwritten", False)))
         from .theme import available_handwriting
@@ -211,6 +222,11 @@ class SettingsWindow(Gtk.Window):
         settings["handwritten"] = self.hand_check.get_active()
         settings["deck_max_tabs"] = int(self.tabs_spin.get_value())
         settings["grid_gap"] = int(self.gap_spin.get_value())
+        settings["grid_side"] = self.side_combo.get_active_id() or "left"
+        if bool(settings.get("grid_mode")) != self.snap_check.get_active():
+            self.app.grid.set_enabled(self.snap_check.get_active())
+        elif self.app.grid.enabled:
+            self.app.grid.reflow()
         self.app.set_deck_visible(self.deck_check.get_active())
         settings["terminal"] = self.term_entry.get_text().strip() or "gnome-terminal"
         settings["claude_cmd"] = self.claude_entry.get_text().strip() or "claude"

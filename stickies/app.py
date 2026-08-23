@@ -10,6 +10,7 @@ from gi.repository import Gio, GLib, Gtk  # noqa: E402
 from . import APP_ID, theme, util
 from .board import Board
 from .deck import Deck
+from .grid import GridMode
 from .layout import arrange_grid
 from .note_window import SHADOW_MARGIN, StickyNote
 from .settings_window import SettingsWindow
@@ -32,6 +33,7 @@ class StickiesApp(Gtk.Application):
         self.store = Store()
         self.windows = {}          # note id -> StickyNote
         self._pre_arrange = None   # {id: (x, y)} before the last "Arrange"
+        self.grid = GridMode(self)
         self.board = None
         self.deck = None
         self.settings_window = None
@@ -85,6 +87,7 @@ class StickiesApp(Gtk.Application):
 
     def quit_app(self):
         self.store.save_now()
+        self.grid.shutdown()
         for window in list(self.windows.values()):
             window.shutdown()
             window.destroy()
@@ -113,6 +116,7 @@ class StickiesApp(Gtk.Application):
             self.windows[note["id"]] = window
             self.add_window(window)
         window.present_note()
+        self.grid.reflow()
         self._refresh_board()
         self._refresh_deck()
         return window
@@ -125,6 +129,7 @@ class StickiesApp(Gtk.Application):
             note["visible"] = False
             self.store.save()
             self._refresh_board()
+        self.grid.reflow()
         self._refresh_deck()
 
     def new_note(self, near=None):
@@ -154,6 +159,7 @@ class StickiesApp(Gtk.Application):
             self.remove_window(window)
             window.destroy()
         self.store.remove(note_id)
+        self.grid.reflow()
         if not self.store.notes and self.board is None and self.deck is None:
             self.new_note()
         self._refresh_board()
@@ -173,33 +179,37 @@ class StickiesApp(Gtk.Application):
         return [w for w in self.windows.values()
                 if w.get_visible() and w.note.get("visible", True)]
 
-    def arrange_notes(self, by_size=False):
-        """Tile every on-screen note into rows, leaving a gap between them."""
+    @staticmethod
+    def shadow_margin():
+        return SHADOW_MARGIN
+
+    def arrange_notes(self, by_size=True):
+        """Pack every on-screen note into half the screen, a gap between each."""
         windows = self._visible_windows()
-        area = util.primary_workarea()
-        if not windows or area is None:
+        region = self.grid.region()
+        if not windows or region is None:
             return
-        gap = max(0, int(self.store.settings.get("grid_gap", 16)))
-        ax, ay, aw, ah = area
-        if self.deck is not None and self.deck.get_visible():
-            _dx, dy, _dw, dh = self.deck.dock_rect()
-            clear = dy + dh + gap - ay
-            if 0 < clear < ah // 2:            # deck along the top: tile below it
-                ay, ah = ay + clear, ah - clear
-        # windows carry a transparent shadow gutter; shrink the area by one
-        # gutter so the visible paper, not the gutter, lines up with the edges
-        inset = SHADOW_MARGIN
-        ax, ay, aw, ah = ax - inset, ay - inset, aw + inset, ah + inset
+        gap = self.grid.gap()
         windows.sort(key=lambda w: w.note.get("created") or "")
         boxes = [(w.note["id"], *w.get_size()) for w in windows]
-        placed = arrange_grid(boxes, (ax, ay, aw, ah), gap=gap, by_size=by_size)
+        placed = arrange_grid(boxes, region, gap=gap, by_size=by_size)
         self._pre_arrange = {w.note["id"]: (w.note.get("x"), w.note.get("y")) for w in windows}
         for window in windows:
             x, y = placed[window.note["id"]]
             window.suppress_docking(1500)
             window.move(int(x), int(y))
             window.note["x"], window.note["y"] = int(x), int(y)
+        self.grid._order = [b[0] for b in sorted(boxes, key=lambda b: placed[b[0]][::-1])]
+        self.store.settings["grid_order"] = list(self.grid._order)
         self.store.save()
+
+    def set_grid_side(self, side):
+        self.store.settings["grid_side"] = side
+        self.store.save()
+        if self.grid.enabled:
+            self.grid.reflow()
+        else:
+            self.arrange_notes()
 
     def restore_layout(self):
         snapshot, self._pre_arrange = self._pre_arrange, None
@@ -215,6 +225,7 @@ class StickiesApp(Gtk.Application):
         self.store.save()
 
     def notify_note_changed(self, _note):
+        self.grid.reflow()
         self._refresh_board()
         self._refresh_deck()
 
