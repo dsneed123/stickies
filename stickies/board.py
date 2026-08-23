@@ -77,6 +77,8 @@ class Board(Gtk.Window):
         menu.append(util.menu_item("Show all notes", lambda *_: self.app.show_all_notes()))
         menu.append(util.menu_item("Hide all notes", lambda *_: self.app.hide_all_notes()))
         menu.append(util.separator())
+        menu.append(util.arrange_submenu(self.app))
+        menu.append(util.separator())
         menu.append(util.menu_item("Settings…", lambda *_: self.app.open_settings()))
         menu.append(util.separator())
         menu.append(util.menu_item("Quit Stickies", lambda *_: self.app.quit_app()))

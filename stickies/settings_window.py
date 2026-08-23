@@ -129,6 +129,12 @@ class SettingsWindow(Gtk.Window):
         grid2.attach(self._label("Tabs on the deck"), 0, 7, 1, 1)
         grid2.attach(self.tabs_spin, 1, 7, 1, 1)
 
+        self.gap_spin = Gtk.SpinButton.new_with_range(0, 120, 2)
+        self.gap_spin.set_value(int(settings.get("grid_gap", 16)))
+        self.gap_spin.set_tooltip_text("Space between notes when you Arrange them into a grid")
+        grid2.attach(self._label("Grid spacing (px)"), 0, 8, 1, 1)
+        grid2.attach(self.gap_spin, 1, 8, 1, 1)
+
         self.hand_check = Gtk.CheckButton(label="Handwritten font")
         self.hand_check.set_active(bool(settings.get("handwritten", False)))
         from .theme import available_handwriting
@@ -204,6 +210,7 @@ class SettingsWindow(Gtk.Window):
         settings["font_scale"] = round(self.scale_spin.get_value(), 2)
         settings["handwritten"] = self.hand_check.get_active()
         settings["deck_max_tabs"] = int(self.tabs_spin.get_value())
+        settings["grid_gap"] = int(self.gap_spin.get_value())
         self.app.set_deck_visible(self.deck_check.get_active())
         settings["terminal"] = self.term_entry.get_text().strip() or "gnome-terminal"
         settings["claude_cmd"] = self.claude_entry.get_text().strip() or "claude"

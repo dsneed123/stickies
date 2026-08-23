@@ -904,6 +904,8 @@ class StickyNote(Gtk.Window):
             self.app.new_note(near=self)
         elif key in (Gdk.KEY_d, Gdk.KEY_D):
             self.app.duplicate_note(self.note)
+        elif key in (Gdk.KEY_g, Gdk.KEY_G):
+            self.app.arrange_notes()
         elif key in (Gdk.KEY_t, Gdk.KEY_T):
             self.toggle_mode()
         elif key in (Gdk.KEY_l, Gdk.KEY_L):
@@ -1086,6 +1088,7 @@ class StickyNote(Gtk.Window):
         add(util.menu_item("Copy note text",
                            lambda *_: util.copy_to_clipboard(note_to_markdown(self.note))))
         add(util.separator())
+        add(util.arrange_submenu(self.app))
         add(util.menu_item("All notes…", lambda *_: self.app.open_board()))
         add(util.menu_item("Settings…", lambda *_: self.app.open_settings()))
         add(util.separator())

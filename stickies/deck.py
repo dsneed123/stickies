@@ -256,6 +256,8 @@ class Deck(Gtk.Window):
         menu.append(util.menu_item("Bring all down", lambda *_: self.app.show_all_notes()))
         menu.append(util.menu_item("Put all away", lambda *_: self.app.hide_all_notes()))
         menu.append(util.separator())
+        menu.append(util.arrange_submenu(self.app))
+        menu.append(util.separator())
         theme_item = Gtk.MenuItem(label="Theme")
         theme_menu = Gtk.Menu()
         current = self.store.settings.get("theme", "classic")
@@ -300,18 +302,17 @@ class Deck(Gtk.Window):
         """Centre on the primary monitor's top edge, unless dragged elsewhere."""
         saved = self.store.settings.get("deck_position")
         width, _height = self.get_size()
-        display = Gdk.Display.get_default()
-        if display is None:
+        area = util.primary_workarea()
+        if area is None:
             return False
-        monitor = display.get_primary_monitor() or display.get_monitor(0)
-        area = monitor.get_workarea()
+        ax, ay, aw, ah = area
         if saved:
             x, y = int(saved[0]), int(saved[1])
-            x = max(area.x, min(x, area.x + area.width - width))
-            y = max(area.y, min(y, area.y + area.height - 40))
+            x = max(ax, min(x, ax + aw - width))
+            y = max(ay, min(y, ay + ah - 40))
         else:
-            x = area.x + (area.width - width) // 2
-            y = area.y
+            x = ax + (aw - width) // 2
+            y = ay
         self.move(x, y)
         return False
 

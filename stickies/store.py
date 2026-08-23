@@ -205,6 +205,7 @@ DEFAULT_SETTINGS = {
     "show_deck": True,
     "deck_position": None,
     "deck_max_tabs": 8,
+    "grid_gap": 16,
 }
 
 COLORS = ["yellow", "green", "blue", "pink", "purple", "orange", "white"]

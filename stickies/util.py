@@ -114,3 +114,28 @@ def scrolled(child, hpolicy=Gtk.PolicyType.NEVER, vpolicy=Gtk.PolicyType.AUTOMAT
 def textview_text(view):
     buf = view.get_buffer()
     return buf.get_text(buf.get_start_iter(), buf.get_end_iter(), False)
+
+
+def primary_workarea():
+    """(x, y, width, height) of the primary monitor minus panels, or None."""
+    display = Gdk.Display.get_default()
+    if display is None:
+        return None
+    monitor = display.get_primary_monitor() or display.get_monitor(0)
+    if monitor is None:
+        return None
+    area = monitor.get_workarea()
+    return area.x, area.y, area.width, area.height
+
+
+def arrange_submenu(app):
+    """'Arrange' menu shared by the deck, the board and the note menu."""
+    item = Gtk.MenuItem(label="Arrange")
+    sub = Gtk.Menu()
+    sub.append(menu_item("Into a grid", lambda *_: app.arrange_notes()))
+    sub.append(menu_item("Into a grid, tallest first", lambda *_: app.arrange_notes(by_size=True)))
+    restore = menu_item("Restore previous layout", lambda *_: app.restore_layout())
+    restore.set_sensitive(bool(getattr(app, "_pre_arrange", None)))
+    sub.append(restore)
+    item.set_submenu(sub)
+    return item

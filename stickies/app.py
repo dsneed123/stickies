@@ -7,10 +7,11 @@ import gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gio, GLib, Gtk  # noqa: E402
 
-from . import APP_ID, theme
+from . import APP_ID, theme, util
 from .board import Board
 from .deck import Deck
-from .note_window import StickyNote
+from .layout import arrange_grid
+from .note_window import SHADOW_MARGIN, StickyNote
 from .settings_window import SettingsWindow
 from .store import Store, new_note
 
@@ -30,6 +31,7 @@ class StickiesApp(Gtk.Application):
         )
         self.store = Store()
         self.windows = {}          # note id -> StickyNote
+        self._pre_arrange = None   # {id: (x, y)} before the last "Arrange"
         self.board = None
         self.deck = None
         self.settings_window = None
@@ -164,6 +166,53 @@ class StickiesApp(Gtk.Application):
     def hide_all_notes(self):
         for note in list(self.store.notes):
             self.hide_note(note)
+
+    # ---------------------------------------------------------------- arrange
+
+    def _visible_windows(self):
+        return [w for w in self.windows.values()
+                if w.get_visible() and w.note.get("visible", True)]
+
+    def arrange_notes(self, by_size=False):
+        """Tile every on-screen note into rows, leaving a gap between them."""
+        windows = self._visible_windows()
+        area = util.primary_workarea()
+        if not windows or area is None:
+            return
+        gap = max(0, int(self.store.settings.get("grid_gap", 16)))
+        ax, ay, aw, ah = area
+        if self.deck is not None and self.deck.get_visible():
+            _dx, dy, _dw, dh = self.deck.dock_rect()
+            clear = dy + dh + gap - ay
+            if 0 < clear < ah // 2:            # deck along the top: tile below it
+                ay, ah = ay + clear, ah - clear
+        # windows carry a transparent shadow gutter; shrink the area by one
+        # gutter so the visible paper, not the gutter, lines up with the edges
+        inset = SHADOW_MARGIN
+        ax, ay, aw, ah = ax - inset, ay - inset, aw + inset, ah + inset
+        windows.sort(key=lambda w: w.note.get("created") or "")
+        boxes = [(w.note["id"], *w.get_size()) for w in windows]
+        placed = arrange_grid(boxes, (ax, ay, aw, ah), gap=gap, by_size=by_size)
+        self._pre_arrange = {w.note["id"]: (w.note.get("x"), w.note.get("y")) for w in windows}
+        for window in windows:
+            x, y = placed[window.note["id"]]
+            window.suppress_docking(1500)
+            window.move(int(x), int(y))
+            window.note["x"], window.note["y"] = int(x), int(y)
+        self.store.save()
+
+    def restore_layout(self):
+        snapshot, self._pre_arrange = self._pre_arrange, None
+        if not snapshot:
+            return
+        for note_id, (x, y) in snapshot.items():
+            window = self.windows.get(note_id)
+            if window is None or x is None or y is None:
+                continue
+            window.suppress_docking(1500)
+            window.move(int(x), int(y))
+            window.note["x"], window.note["y"] = int(x), int(y)
+        self.store.save()
 
     def notify_note_changed(self, _note):
         self._refresh_board()
