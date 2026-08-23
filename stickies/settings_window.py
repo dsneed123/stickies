@@ -142,9 +142,16 @@ class SettingsWindow(Gtk.Window):
         grid2.attach(self._label("Grid lives in the"), 0, 9, 1, 1)
         grid2.attach(self.side_combo, 1, 9, 1, 1)
 
+        self.fraction_combo = Gtk.ComboBoxText()
+        for f, label in ((2, "Half the screen"), (3, "A third of the screen"), (4, "A quarter of the screen")):
+            self.fraction_combo.append(str(f), label)
+        self.fraction_combo.set_active_id(str(settings.get("grid_fraction", 2)))
+        grid2.attach(self._label("Grid size"), 0, 10, 1, 1)
+        grid2.attach(self.fraction_combo, 1, 10, 1, 1)
+
         self.snap_check = Gtk.CheckButton(label="Keep notes snapped to the grid")
         self.snap_check.set_active(bool(settings.get("grid_mode", False)))
-        grid2.attach(self.snap_check, 1, 10, 2, 1)
+        grid2.attach(self.snap_check, 1, 11, 2, 1)
 
         self.hand_check = Gtk.CheckButton(label="Handwritten font")
         self.hand_check.set_active(bool(settings.get("handwritten", False)))
@@ -223,6 +230,7 @@ class SettingsWindow(Gtk.Window):
         settings["deck_max_tabs"] = int(self.tabs_spin.get_value())
         settings["grid_gap"] = int(self.gap_spin.get_value())
         settings["grid_side"] = self.side_combo.get_active_id() or "left"
+        settings["grid_fraction"] = int(self.fraction_combo.get_active_id() or 2)
         if bool(settings.get("grid_mode")) != self.snap_check.get_active():
             self.app.grid.set_enabled(self.snap_check.get_active())
         elif self.app.grid.enabled:

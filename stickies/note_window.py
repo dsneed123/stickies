@@ -158,6 +158,7 @@ class StickyNote(Gtk.Window):
         self._dock_source = None
         self._dock_blocked_until = 0
         self._dragging = False
+        self._grid_sized = False   # the grid itself is resizing this window
 
         self.set_decorated(False)
         self.set_resizable(True)
@@ -770,6 +771,7 @@ class StickyNote(Gtk.Window):
             return False
         x, y = self.get_position()
         w, h = self.get_size()
+        resized = (w, h) != (self.note.get("w"), self.note.get("h"))
         if (x, y, w, h) != (self.note.get("x"), self.note.get("y"),
                             self.note.get("w"), self.note.get("h")):
             self.note.update({"x": x, "y": y, "w": w, "h": h})
@@ -777,6 +779,10 @@ class StickyNote(Gtk.Window):
         self._check_dock(x, y, w)
         if self._dragging:
             self.app.grid.on_drag_moved(self)
+        elif resized and not self._grid_sized:
+            if not self.app.grid.enabled:
+                self.note["own_w"], self.note["own_h"] = w, h
+            self.app.grid.on_resized(self)
         return False
 
     def begin_user_move(self, button, x_root, y_root, time):
@@ -787,6 +793,26 @@ class StickyNote(Gtk.Window):
 
     def drag_finished(self):
         self._dragging = False
+
+    def place_at(self, x, y, w, h):
+        """Move and resize in one go, so the window manager clamps the new
+        size to the screen rather than the old one."""
+        gdk = self.get_window()
+        if gdk is not None and self.get_realized():
+            self.resize(w, h)            # keep GTK's own idea of the size in step
+            gdk.move_resize(x, y, w, h)
+        else:
+            self.resize(w, h)
+            self.move(x, y)
+
+    def clear_grid_sized(self):
+        self._grid_sized = False
+        return False
+
+    def keeps_own_size(self):
+        """True while the grid must not resize this note."""
+        return bool(self.note.get("collapsed")) or (
+            self.prompt_revealer is not None and self.prompt_revealer.get_reveal_child())
 
     # ------------------------------------------------------------ deck docking
 

@@ -1,9 +1,10 @@
-"""Snap-to-grid mode: notes live packed in one half of the screen.
+"""Snap-to-grid mode: notes live in equal cells in one part of the screen.
 
-While the mode is on every on-screen note is tiled into a rectangle (the
-left or right half of the work area, below the deck). Dragging a note shows a
-translucent slot where it will land; letting go drops it there and the others
-shuffle around it. New, shown and hidden notes reflow the grid."""
+While the mode is on every on-screen note is resized into a cell of a
+rectangle (the left or right half, third or quarter of the work area, below
+the deck). Dragging a note shows a translucent slot where it will land;
+letting go drops it there and the others shuffle around it. New, shown and
+hidden notes reflow the grid."""
 
 import cairo
 import gi
@@ -13,7 +14,7 @@ gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 from . import theme, util
-from .layout import arrange_grid
+from .layout import SpanGrid
 
 SETTLE_MS = 260     # no configure events for this long = the drag has ended
 
@@ -70,10 +71,15 @@ class SlotHighlight(Gtk.Window):
 class GridMode:
     def __init__(self, app):
         self.app = app
-        self.store = app.store
         self.highlight = None
         self._settle = None
+        self._resize_source = None
+        self._last_plan = None
         self._order = list(self.store.settings.get("grid_order") or [])
+
+    @property
+    def store(self):
+        return self.app.store
 
     # ----------------------------------------------------------------- state
 
@@ -104,67 +110,82 @@ class GridMode:
             if 0 < clear < ah // 2:
                 ay, ah = ay + clear, ah - clear
         gap = self.gap()
-        half = aw // 2
+        fraction = max(1, min(4, int(self.store.settings.get("grid_fraction", 2))))
+        width = aw // fraction
         if self.store.settings.get("grid_side", "left") == "right":
-            ax = ax + aw - half
-        inset = self.app.shadow_margin()
-        # the gap also pads the region's edges, minus the shadow gutter the
-        # windows already carry
-        pad = max(0, gap - inset)
-        return ax + pad - inset, ay + pad - inset, half - pad + inset, ah - pad + inset
+            ax = ax + aw - width
+        # keep a gap's worth of space at the region's edges too; the windows
+        # already carry a transparent shadow gutter that counts towards it
+        pad = max(0, gap - self.app.shadow_margin())
+        return ax + pad, ay + pad, width - 2 * pad, ah - 2 * pad
 
     def gap(self):
         return max(0, int(self.store.settings.get("grid_gap", 16)))
 
     # ---------------------------------------------------------------- layout
 
-    def _ordered(self, windows):
-        """Stable order: remembered order first, newcomers sorted tallest-first."""
+    def _ordered(self, windows, by_size=False):
+        """Stable order: remembered order first, newcomers after (tallest
+        first, so big notes lead when the mode is first switched on)."""
         by_id = {w.note["id"]: w for w in windows}
-        known = [by_id[i] for i in self._order if i in by_id]
-        new = [w for w in windows if w.note["id"] not in self._order]
+        known = [] if by_size else [by_id[i] for i in self._order if i in by_id]
+        new = [w for w in windows if w not in known]
         new.sort(key=lambda w: (-w.get_size()[1], -w.get_size()[0], w.note.get("created") or ""))
         return known + new
 
-    def _plan(self, windows, dragging=None):
-        """{id: (x, y)} for ``windows``; ``dragging`` is slotted nearest its
-        current centre rather than at its remembered place."""
+    def plan(self, windows, dragging=None, by_size=False, pinned=None):
+        """{id: (x, y, w, h)} for ``windows``. ``dragging`` is pinned to the
+        cell under it and the rest flow around; ``pinned`` ({id: window}) keeps
+        those notes in the cell they already occupy."""
         region = self.region()
-        if region is None:
+        if region is None or not windows:
             return {}
-        others = self._ordered([w for w in windows if w is not dragging])
-        boxes = [(w.note["id"], *w.get_size()) for w in others]
-        if dragging is None:
-            placed = arrange_grid(boxes, region, gap=self.gap())
-            self._order = [w.note["id"] for w in others]
-            return placed
-        dx, dy = dragging.get_position()
-        dw, dh = dragging.get_size()
-        cx, cy = dx + dw / 2, dy + dh / 2
-        best, best_d = len(boxes), None
-        for index in range(len(boxes) + 1):
-            trial = boxes[:index] + [(dragging.note["id"], dw, dh)] + boxes[index:]
-            px, py = arrange_grid(trial, region, gap=self.gap())[dragging.note["id"]]
-            d = (px + dw / 2 - cx) ** 2 + (py + dh / 2 - cy) ** 2
-            if best_d is None or d < best_d:
-                best, best_d = index, d
-        trial = boxes[:best] + [(dragging.note["id"], dw, dh)] + boxes[best:]
-        placed = arrange_grid(trial, region, gap=self.gap())
-        self._order = [b[0] for b in trial]
+        grid = SpanGrid(region, gap=self.gap())
+        ordered = self._ordered(windows, by_size)
+        items = [(w.note["id"], *self.own_size(w)) for w in ordered]
+        pins = {}
+        for window in list((pinned or {}).values()) + ([dragging] if dragging else []):
+            if window in windows:
+                x, y = window.get_position()
+                pins[window.note["id"]] = grid.cell_at((x, y), grid.span(*self.own_size(window)))
+        placed = grid.pack(items, pinned=pins)
+        self._order = grid.reading_order(placed)
         return placed
 
+    @staticmethod
+    def own_size(window):
+        """The size the user gave a note, as opposed to the cell the grid
+        last stretched it into - so switching grid size doesn't drift spans."""
+        note = window.note
+        if not note.get("own_w") or not note.get("own_h"):
+            note["own_w"], note["own_h"] = window.get_size()
+        return note["own_w"], note["own_h"]
+
+    @staticmethod
+    def remember_own_size(window):
+        window.note["own_w"], window.note["own_h"] = window.get_size()
+
     def _apply(self, placed, skip=None):
+        self._last_plan = dict(placed)
         for window in self.app._visible_windows():
             if window is skip:
                 continue
             target = placed.get(window.note["id"])
             if target is None:
                 continue
-            x, y = int(target[0]), int(target[1])
-            if (x, y) != tuple(window.get_position()):
-                window.suppress_docking(800)
-                window.move(x, y)
-            window.note["x"], window.note["y"] = x, y
+            x, y, w, h = (int(v) for v in target)
+            window.suppress_docking(800)
+            if window.keeps_own_size():
+                # collapsed, or the prompt panel is open: only move it
+                if (x, y) != tuple(window.get_position()):
+                    window.move(x, y)
+                window.note.update({"x": x, "y": y})
+                continue
+            if (w, h) != tuple(window.get_size()):
+                window._grid_sized = True
+                GLib.timeout_add(SETTLE_MS, window.clear_grid_sized)
+            window.place_at(x, y, w, h)
+            window.note.update({"x": x, "y": y, "w": w, "h": h})
         self.store.settings["grid_order"] = list(self._order)
         self.store.save()
 
@@ -174,7 +195,7 @@ class GridMode:
         windows = self.app._visible_windows()
         if not windows:
             return
-        self._apply(self._plan(windows))
+        self._apply(self.plan(windows))
 
     # ------------------------------------------------------------------ drag
 
@@ -185,10 +206,9 @@ class GridMode:
         windows = self.app._visible_windows()
         if window not in windows:
             return
-        placed = self._plan(windows, dragging=window)
+        placed = self.plan(windows, dragging=window)
         self._apply(placed, skip=window)
-        x, y = placed[window.note["id"]]
-        w, h = window.get_size()
+        x, y, w, h = placed[window.note["id"]]
         inset = self.app.shadow_margin()
         if self.highlight is None:
             self.highlight = SlotHighlight()
@@ -203,8 +223,29 @@ class GridMode:
         self._hide_highlight()
         if not self.enabled or window.note.get("visible", True) is False:
             return False
-        placed = self._plan(self.app._visible_windows(), dragging=window)
+        placed = self.plan(self.app._visible_windows(), dragging=window)
         self._apply(placed)
+        return False
+
+    def on_resized(self, window):
+        """A note was resized by hand: re-pack around its new size, keeping it
+        in the cell it occupies."""
+        if not self.enabled or window._dragging:
+            return
+        if self._resize_source is not None:
+            GLib.source_remove(self._resize_source)
+        self._resize_source = GLib.timeout_add(SETTLE_MS, self._on_resize_settled, window)
+
+    def _on_resize_settled(self, window):
+        self._resize_source = None
+        if not self.enabled:
+            return False
+        windows = self.app._visible_windows()
+        if window in windows:
+            self.remember_own_size(window)
+            placed = self.plan(windows, pinned={window.note["id"]: window})
+            if placed != self._last_plan:       # unchanged = nothing to do, no loop
+                self._apply(placed)
         return False
 
     def cancel_drag(self):

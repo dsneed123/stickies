@@ -132,9 +132,8 @@ def arrange_submenu(app):
     """'Arrange' menu shared by the deck, the board and the note menu."""
     item = Gtk.MenuItem(label="Arrange")
     sub = Gtk.Menu()
-    sub.append(menu_item("Into a grid now", lambda *_: app.arrange_notes()))
-    sub.append(menu_item("Into a grid, in the order they were made",
-                         lambda *_: app.arrange_notes(by_size=False)))
+    sub.append(menu_item("Into a grid now", lambda *_: app.arrange_notes(by_size=False)))
+    sub.append(menu_item("Into a grid, biggest first", lambda *_: app.arrange_notes()))
     restore = menu_item("Restore previous layout", lambda *_: app.restore_layout())
     restore.set_sensitive(bool(getattr(app, "_pre_arrange", None)))
     sub.append(restore)
@@ -152,5 +151,16 @@ def arrange_submenu(app):
         side_menu.append(entry)
     side.set_submenu(side_menu)
     sub.append(side)
+    size = Gtk.MenuItem(label="Grid size")
+    size_menu = Gtk.Menu()
+    current_f = int(app.store.settings.get("grid_fraction", 2))
+    for f, label in ((2, "Half the screen"), (3, "A third of the screen"), (4, "A quarter of the screen")):
+        entry = Gtk.CheckMenuItem(label=label)
+        entry.set_draw_as_radio(True)
+        entry.set_active(f == current_f)
+        entry.connect("activate", lambda _i, f=f: app.set_grid_fraction(f))
+        size_menu.append(entry)
+    size.set_submenu(size_menu)
+    sub.append(size)
     item.set_submenu(sub)
     return item

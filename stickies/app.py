@@ -11,7 +11,6 @@ from . import APP_ID, theme, util
 from .board import Board
 from .deck import Deck
 from .grid import GridMode
-from .layout import arrange_grid
 from .note_window import SHADOW_MARGIN, StickyNote
 from .settings_window import SettingsWindow
 from .store import Store, new_note
@@ -184,24 +183,22 @@ class StickiesApp(Gtk.Application):
         return SHADOW_MARGIN
 
     def arrange_notes(self, by_size=True):
-        """Pack every on-screen note into half the screen, a gap between each."""
+        """Fit every on-screen note into equal cells in the grid region."""
         windows = self._visible_windows()
-        region = self.grid.region()
-        if not windows or region is None:
+        if not windows:
             return
-        gap = self.grid.gap()
-        windows.sort(key=lambda w: w.note.get("created") or "")
-        boxes = [(w.note["id"], *w.get_size()) for w in windows]
-        placed = arrange_grid(boxes, region, gap=gap, by_size=by_size)
-        self._pre_arrange = {w.note["id"]: (w.note.get("x"), w.note.get("y")) for w in windows}
-        for window in windows:
-            x, y = placed[window.note["id"]]
-            window.suppress_docking(1500)
-            window.move(int(x), int(y))
-            window.note["x"], window.note["y"] = int(x), int(y)
-        self.grid._order = [b[0] for b in sorted(boxes, key=lambda b: placed[b[0]][::-1])]
-        self.store.settings["grid_order"] = list(self.grid._order)
+        self._pre_arrange = {w.note["id"]: (w.note.get("x"), w.note.get("y"),
+                                             w.note.get("w"), w.note.get("h")) for w in windows}
+        placed = self.grid.plan(windows, by_size=by_size)
+        self.grid._apply(placed)
+
+    def set_grid_fraction(self, fraction):
+        self.store.settings["grid_fraction"] = int(fraction)
         self.store.save()
+        if self.grid.enabled:
+            self.grid.reflow()
+        else:
+            self.arrange_notes()
 
     def set_grid_side(self, side):
         self.store.settings["grid_side"] = side
@@ -215,11 +212,14 @@ class StickiesApp(Gtk.Application):
         snapshot, self._pre_arrange = self._pre_arrange, None
         if not snapshot:
             return
-        for note_id, (x, y) in snapshot.items():
+        for note_id, (x, y, w, h) in snapshot.items():
             window = self.windows.get(note_id)
             if window is None or x is None or y is None:
                 continue
             window.suppress_docking(1500)
+            if w and h:
+                window.resize(int(w), int(h))
+                window.note["w"], window.note["h"] = int(w), int(h)
             window.move(int(x), int(y))
             window.note["x"], window.note["y"] = int(x), int(y)
         self.store.save()

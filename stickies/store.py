@@ -208,6 +208,7 @@ DEFAULT_SETTINGS = {
     "grid_gap": 16,
     "grid_mode": False,
     "grid_side": "left",
+    "grid_fraction": 2,
     "grid_order": [],
 }
 
