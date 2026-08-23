@@ -15,6 +15,7 @@ from .theme import THEME_LABELS, THEME_ORDER
 
 TAB_CHARS = 14
 PULL_THRESHOLD = 14
+MAX_TABS = 8        # newest notes get a tab; the rest fold into an overflow menu
 
 
 class Deck(Gtk.Window):
@@ -79,10 +80,52 @@ class Deck(Gtk.Window):
         for child in list(self.tabs.get_children()):
             self.tabs.remove(child)
         notes = sorted(self.store.notes, key=lambda n: n.get("created") or "")
-        for note in notes:
+        limit = max(1, int(self.store.settings.get("deck_max_tabs", MAX_TABS)))
+        overflow, shown = notes[:-limit], notes[-limit:]
+        if overflow:
+            self.tabs.pack_start(self._overflow_button(overflow), False, False, 0)
+        for note in shown:
             self.tabs.pack_start(self._tab(note), False, False, 0)
         self.tabs.show_all()
         GLib.idle_add(self._reposition)
+
+    def _overflow_button(self, notes):
+        """A "+N" pill standing in for the oldest notes that no longer fit."""
+        button = Gtk.Button(label="+%d" % len(notes))
+        button.set_relief(Gtk.ReliefStyle.NONE)
+        button.set_focus_on_click(False)
+        ctx = button.get_style_context()
+        ctx.add_class("deck-tab")
+        ctx.add_class("deck-more")
+        away = sum(1 for n in notes if not n.get("visible", True))
+        button.set_tooltip_text(
+            "%d older note%s%s\nclick to list them"
+            % (len(notes), "" if len(notes) == 1 else "s",
+               "  ·  %d put away" % away if away else "")
+        )
+        button.connect("clicked", self._on_overflow_clicked, notes)
+        return button
+
+    def _on_overflow_clicked(self, button, notes):
+        menu = Gtk.Menu()
+        for note in reversed(notes):        # newest first, like reading the strip
+            title = (note.get("title") or "").strip() or "untitled"
+            on_screen = note.get("visible", True)
+            item = util.check_item(title, on_screen, None)
+            item.set_draw_as_radio(False)
+            item.connect("toggled", lambda _i, n=note, v=on_screen: self._toggle_note(n, v))
+            menu.append(item)
+        menu.append(util.separator())
+        menu.append(util.menu_item("All notes…", lambda *_: self.app.open_board()))
+        menu.show_all()
+        menu.popup_at_widget(button, Gdk.Gravity.SOUTH_WEST, Gdk.Gravity.NORTH_WEST, None)
+
+    def _toggle_note(self, note, on_screen):
+        if on_screen:
+            self.app.hide_note(note)
+        else:
+            self.app.show_note(note)
+        self.refresh()
 
     def _tab(self, note):
         title = (note.get("title") or "").strip() or "untitled"

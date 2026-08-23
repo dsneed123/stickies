@@ -123,6 +123,12 @@ class SettingsWindow(Gtk.Window):
         self.deck_check.set_active(bool(settings.get("show_deck", True)))
         grid2.attach(self.deck_check, 1, 6, 2, 1)
 
+        self.tabs_spin = Gtk.SpinButton.new_with_range(1, 30, 1)
+        self.tabs_spin.set_value(int(settings.get("deck_max_tabs", 8)))
+        self.tabs_spin.set_tooltip_text("Older notes fold into a “+N” menu on the deck")
+        grid2.attach(self._label("Tabs on the deck"), 0, 7, 1, 1)
+        grid2.attach(self.tabs_spin, 1, 7, 1, 1)
+
         self.hand_check = Gtk.CheckButton(label="Handwritten font")
         self.hand_check.set_active(bool(settings.get("handwritten", False)))
         from .theme import available_handwriting
@@ -197,6 +203,7 @@ class SettingsWindow(Gtk.Window):
         settings["default_color"] = self.color_combo.get_active_id() or "yellow"
         settings["font_scale"] = round(self.scale_spin.get_value(), 2)
         settings["handwritten"] = self.hand_check.get_active()
+        settings["deck_max_tabs"] = int(self.tabs_spin.get_value())
         self.app.set_deck_visible(self.deck_check.get_active())
         settings["terminal"] = self.term_entry.get_text().strip() or "gnome-terminal"
         settings["claude_cmd"] = self.claude_entry.get_text().strip() or "claude"

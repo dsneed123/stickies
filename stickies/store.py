@@ -204,6 +204,7 @@ DEFAULT_SETTINGS = {
     "default_color": "yellow",
     "show_deck": True,
     "deck_position": None,
+    "deck_max_tabs": 8,
 }
 
 COLORS = ["yellow", "green", "blue", "pink", "purple", "orange", "white"]

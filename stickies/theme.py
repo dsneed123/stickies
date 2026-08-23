@@ -460,6 +460,8 @@ _DECK_CSS = """
 }
 .deck-tab:hover { border-color: rgba(0,0,0,0.45); }
 .deck-tab:active { padding-top: 1px; }
+.deck-more { color: #ececf2; background-color: rgba(255,255,255,0.10); border-color: rgba(255,255,255,0.18); }
+.deck-more:hover { background-color: rgba(255,255,255,0.22); }
 .deck-away { opacity: 0.42; }
 .deck-away:hover { opacity: 0.75; }
 .deck-badge {
